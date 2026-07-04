@@ -1,0 +1,64 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        canvas: "#0E0F11",
+        panel: "#141517",
+        border: "#27272A",
+        accent: "#00FF00",
+        "accent-dim": "#00CC00",
+        "accent-glow": "rgba(0, 255, 0, 0.15)",
+        "severity-critical": "#FF3B3B",
+        "severity-high": "#FF8C00",
+        "severity-medium": "#FFD600",
+        "severity-low": "#00BFFF",
+        "grade-a": "#00FF00",
+        "grade-b": "#7CFF00",
+        "grade-c": "#FFD600",
+        "grade-d": "#FF8C00",
+        "grade-f": "#FF3B3B",
+      },
+      fontFamily: {
+        sans: ["Inter", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "Fira Code", "monospace"],
+      },
+      animation: {
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
+        "scan-line": "scan-line 3s linear infinite",
+        "fade-in": "fade-in 0.3s ease-out",
+        "slide-up": "slide-up 0.3s ease-out",
+        "violation-pulse": "violation-pulse 1.5s ease-in-out infinite",
+        "terminal-blink": "terminal-blink 1s step-end infinite",
+      },
+      keyframes: {
+        "pulse-glow": {
+          "0%, 100%": { boxShadow: "0 0 5px rgba(0, 255, 0, 0.3)" },
+          "50%": { boxShadow: "0 0 20px rgba(0, 255, 0, 0.6), 0 0 40px rgba(0, 255, 0, 0.2)" },
+        },
+        "scan-line": {
+          "0%": { transform: "translateY(-100%)" },
+          "100%": { transform: "translateY(100%)" },
+        },
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "slide-up": {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "violation-pulse": {
+          "0%, 100%": { borderColor: "rgba(255, 59, 59, 0.3)" },
+          "50%": { borderColor: "rgba(255, 59, 59, 1)" },
+        },
+        "terminal-blink": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0" },
+        },
+      },
+    },
+  },
+  plugins: [],
+};
