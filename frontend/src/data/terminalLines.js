@@ -1,0 +1,17 @@
+export const TERMINAL_LINES = [
+  { text: "> Initializing RepoMap Sentinel v1.0...", delay: 200 },
+  { text: "> Loading analysis engine...", delay: 400 },
+  { text: "> Parsing directory manifest...", delay: 600 },
+  { text: "> Enumerating file nodes...", delay: 900 },
+  { text: "> Detecting architecture patterns...", delay: 1200 },
+  { text: "> Running compliance checks...", delay: 1500 },
+  { text: "> Scanning for circular dependencies...", delay: 1800 },
+  { text: "> Evaluating layer boundaries...", delay: 2100 },
+  { text: "> Computing technical debt metrics...", delay: 2400 },
+  { text: "> Mapping district boundaries...", delay: 2700 },
+  { text: "> Generating connection graph...", delay: 3000 },
+  { text: "> Building multi-audience descriptions...", delay: 3300 },
+  { text: "> Compiling violation report...", delay: 3600 },
+  { text: "> Finalizing audit payload...", delay: 3900 },
+  { text: "> ANALYSIS COMPLETE ✓", delay: 4200 },
+];
