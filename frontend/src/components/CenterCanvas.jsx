@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback, useState, useEffect } from "react";
 import {
   ReactFlow,
   Background,
@@ -8,7 +8,7 @@ import {
   useEdgesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Radar, Loader2 } from "lucide-react";
+import { Radar, Loader2, Route, ChevronDown, X } from "lucide-react";
 import DistrictNode from "./DistrictNode";
 
 const nodeTypes = { district: DistrictNode };
@@ -24,26 +24,7 @@ const LAYER_ORDER = [
   "testing",
 ];
 
-function computeLayout(districts, violations) {
-  const violationDistrictIds = new Set();
-  if (violations) {
-    // Mark districts that might have violations (by keyword matching)
-    districts.forEach((d) => {
-      violations.forEach((v) => {
-        const issueLC = v.issue.toLowerCase();
-        const nameLC = d.name.toLowerCase();
-        if (issueLC.includes(nameLC) || nameLC.split(" ").some((w) => w.length > 3 && issueLC.includes(w))) {
-          violationDistrictIds.add(d.id);
-        }
-      });
-    });
-    // If no keyword matches, mark first two districts with critical/high violations
-    if (violationDistrictIds.size === 0 && violations.length > 0 && districts.length > 1) {
-      violationDistrictIds.add(districts[0].id);
-      if (districts.length > 2) violationDistrictIds.add(districts[2].id);
-    }
-  }
-
+function computeLayout(districts) {
   // Group by layer
   const layerGroups = {};
   districts.forEach((d) => {
@@ -55,7 +36,7 @@ function computeLayout(districts, violations) {
   const nodes = [];
   let yOffset = 0;
   const nodeSpacingX = 260;
-  const nodeSpacingY = 160;
+  const nodeSpacingY = 170;
 
   LAYER_ORDER.forEach((layer) => {
     const group = layerGroups[layer];
@@ -72,8 +53,10 @@ function computeLayout(districts, violations) {
         data: {
           name: d.name,
           layer: d.layer,
-          hasViolation: violationDistrictIds.has(d.id),
+          status: d.status || "COMPLIANT",
           connectionCount: d.connectsTo?.length || 0,
+          isTraced: false,
+          isTraceDimmed: false,
         },
       });
     });
@@ -81,7 +64,7 @@ function computeLayout(districts, violations) {
     yOffset += nodeSpacingY;
   });
 
-  // Also place any districts that didn't match LAYER_ORDER
+  // Place any districts that didn't match LAYER_ORDER
   const placedLayers = new Set(LAYER_ORDER);
   Object.entries(layerGroups).forEach(([layer, group]) => {
     if (placedLayers.has(layer)) return;
@@ -96,8 +79,10 @@ function computeLayout(districts, violations) {
         data: {
           name: d.name,
           layer: d.layer,
-          hasViolation: violationDistrictIds.has(d.id),
+          status: d.status || "COMPLIANT",
           connectionCount: d.connectsTo?.length || 0,
+          isTraced: false,
+          isTraceDimmed: false,
         },
       });
     });
@@ -112,8 +97,12 @@ function computeLayout(districts, violations) {
     if (d.connectsTo) {
       d.connectsTo.forEach((targetId) => {
         if (nodeIdSet.has(targetId)) {
+          const sourceStatus = d.status || "COMPLIANT";
+          const targetDistrict = districts.find((t) => t.id === targetId);
+          const targetStatus = targetDistrict?.status || "COMPLIANT";
           const hasViolation =
-            violationDistrictIds.has(d.id) || violationDistrictIds.has(targetId);
+            sourceStatus === "CRITICAL" || targetStatus === "CRITICAL";
+
           edges.push({
             id: `${d.id}-${targetId}`,
             source: d.id,
@@ -139,13 +128,14 @@ export default function CenterCanvas({
   onNodeClick,
   isLoading,
   error,
+  activeTrace,
+  setActiveTrace,
 }) {
+  const [traceDropdownOpen, setTraceDropdownOpen] = useState(false);
+
   const { layoutNodes, layoutEdges } = useMemo(() => {
     if (!auditData?.districts) return { layoutNodes: [], layoutEdges: [] };
-    const { nodes, edges } = computeLayout(
-      auditData.districts,
-      auditData.complianceViolations
-    );
+    const { nodes, edges } = computeLayout(auditData.districts);
     return { layoutNodes: nodes, layoutEdges: edges };
   }, [auditData]);
 
@@ -153,13 +143,13 @@ export default function CenterCanvas({
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutEdges);
 
   // Sync layout when auditData changes
-  React.useEffect(() => {
+  useEffect(() => {
     setNodes(layoutNodes);
     setEdges(layoutEdges);
   }, [layoutNodes, layoutEdges, setNodes, setEdges]);
 
   // Update selection state
-  React.useEffect(() => {
+  useEffect(() => {
     setNodes((nds) =>
       nds.map((n) => ({
         ...n,
@@ -168,12 +158,72 @@ export default function CenterCanvas({
     );
   }, [selectedDistrictId, setNodes]);
 
+  // ── Execution Trace Logic ──
+  useEffect(() => {
+    if (!activeTrace) {
+      // Clear trace state
+      setNodes((nds) =>
+        nds.map((n) => ({
+          ...n,
+          data: { ...n.data, isTraced: false, isTraceDimmed: false },
+        }))
+      );
+      setEdges((eds) =>
+        eds.map((e) => ({
+          ...e,
+          className: "",
+          style: { ...e.style, opacity: 0.6 },
+        }))
+      );
+      return;
+    }
+
+    const tracePath = new Set(activeTrace.path);
+
+    // Build trace edges (pairs of consecutive nodes in the path)
+    const traceEdgePairs = new Set();
+    for (let i = 0; i < activeTrace.path.length - 1; i++) {
+      traceEdgePairs.add(`${activeTrace.path[i]}-${activeTrace.path[i + 1]}`);
+      // Also check reverse since edges might go either direction
+      traceEdgePairs.add(`${activeTrace.path[i + 1]}-${activeTrace.path[i]}`);
+    }
+
+    // Update nodes: traced or dimmed
+    setNodes((nds) =>
+      nds.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          isTraced: tracePath.has(n.id),
+          isTraceDimmed: !tracePath.has(n.id),
+        },
+      }))
+    );
+
+    // Update edges: traced or dimmed
+    setEdges((eds) =>
+      eds.map((e) => {
+        const isTraceEdge = traceEdgePairs.has(e.id);
+        return {
+          ...e,
+          className: isTraceEdge ? "trace-active" : "trace-dimmed",
+          animated: isTraceEdge,
+          style: isTraceEdge
+            ? { stroke: "#00BFFF", strokeWidth: 3, opacity: 1 }
+            : { stroke: "#1a1a1e", strokeWidth: 1, opacity: 0.2 },
+        };
+      })
+    );
+  }, [activeTrace, setNodes, setEdges]);
+
   const handleNodeClick = useCallback(
     (_event, node) => {
       onNodeClick(node.id);
     },
     [onNodeClick]
   );
+
+  const traces = auditData?.executionTraces || [];
 
   // ── Empty State ──
   if (!auditData && !isLoading && !error) {
@@ -187,8 +237,8 @@ export default function CenterCanvas({
             Awaiting Input
           </h3>
           <p className="text-sm text-zinc-600 max-w-xs mx-auto">
-            Paste a directory tree or select a Quick-Scan preset, then execute
-            analysis to visualize the architecture map.
+            Paste a directory tree, a GitHub URL, or select a Quick-Scan preset,
+            then execute analysis to visualize the architecture map.
           </p>
         </div>
       </div>
@@ -228,35 +278,139 @@ export default function CenterCanvas({
 
   // ── React Flow Canvas ──
   return (
-    <div className="flex-1 bg-canvas">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.3 }}
-        minZoom={0.3}
-        maxZoom={2}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background color="#27272A" gap={20} size={1} />
-        <Controls
-          showInteractive={false}
-          position="bottom-left"
-        />
-        <MiniMap
-          nodeColor={(n) => {
-            if (n.selected) return "#00FF00";
-            if (n.data?.hasViolation) return "#FF3B3B";
-            return "#27272A";
-          }}
-          maskColor="rgba(14, 15, 17, 0.8)"
-          position="bottom-right"
-        />
-      </ReactFlow>
+    <div className="flex-1 bg-canvas flex flex-col relative">
+      {/* ── Mock Data Warning Banner ── */}
+      {auditData?.isMock && (
+        <div className="absolute top-0 left-0 right-0 bg-red-500/90 text-white text-xs font-semibold py-1.5 px-4 flex items-center justify-center gap-2 z-50">
+          <span>⚠️</span>
+          <span>
+            {auditData.apiError || "API Error"} — Displaying Failsafe Mock Data. The graph below is not unique to this repository.
+          </span>
+        </div>
+      )}
+
+      {/* ── Execution Trace Toolbar ── */}
+      {traces.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-panel/80 backdrop-blur-sm z-10">
+          <Route className="w-4 h-4 text-sky-400" />
+          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+            Simulate Execution Trace
+          </span>
+
+          {/* Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setTraceDropdownOpen(!traceDropdownOpen)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 ${
+                activeTrace
+                  ? "bg-sky-500/10 border-sky-500/40 text-sky-400"
+                  : "bg-canvas border-border text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+              }`}
+            >
+              {activeTrace ? activeTrace.name : "Select Trace"}
+              <ChevronDown
+                className={`w-3 h-3 transition-transform ${
+                  traceDropdownOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {traceDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1 w-64 bg-panel border border-border rounded-xl shadow-2xl z-50 overflow-hidden animate-slide-up">
+                {traces.map((trace, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setActiveTrace(trace);
+                      setTraceDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-4 py-3 text-xs border-b border-border/50 last:border-0
+                               transition-all duration-200 ${
+                                 activeTrace?.name === trace.name
+                                   ? "bg-sky-500/10 text-sky-400"
+                                   : "text-zinc-300 hover:bg-canvas/80 hover:text-white"
+                               }`}
+                  >
+                    <div className="font-semibold mb-0.5">{trace.name}</div>
+                    <div className="text-[10px] text-zinc-500">
+                      {trace.description}
+                    </div>
+                    <div className="text-[10px] font-mono text-zinc-600 mt-1">
+                      {trace.path.join(" → ")}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Clear trace button */}
+          {activeTrace && (
+            <button
+              onClick={() => {
+                setActiveTrace(null);
+                setTraceDropdownOpen(false);
+              }}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-zinc-400
+                         hover:text-white hover:bg-zinc-800 transition-all border border-transparent hover:border-border"
+            >
+              <X className="w-3 h-3" />
+              Clear
+            </button>
+          )}
+
+          {/* Trace path visualization */}
+          {activeTrace && (
+            <div className="ml-auto flex items-center gap-1 text-[10px] font-mono text-sky-400/60">
+              {activeTrace.path.map((nodeId, i) => (
+                <React.Fragment key={nodeId}>
+                  <span className="px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20">
+                    {nodeId.replace("dist-", "")}
+                  </span>
+                  {i < activeTrace.path.length - 1 && (
+                    <span className="text-sky-500">→</span>
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── React Flow ── */}
+      <div className="flex-1">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={handleNodeClick}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.3 }}
+          minZoom={0.3}
+          maxZoom={2}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background color="#27272A" gap={20} size={1} />
+          <Controls
+            showInteractive={false}
+            position="bottom-left"
+          />
+          <MiniMap
+            nodeColor={(n) => {
+              if (n.data?.isTraceDimmed) return "#1a1a1e";
+              if (n.data?.isTraced) return "#00BFFF";
+              if (n.selected) return "#00FF00";
+              if (n.data?.status === "CRITICAL") return "#FF3B3B";
+              if (n.data?.status === "WARNING") return "#FF8C00";
+              return "#27272A";
+            }}
+            maskColor="rgba(14, 15, 17, 0.8)"
+            position="bottom-right"
+          />
+        </ReactFlow>
+      </div>
     </div>
   );
 }

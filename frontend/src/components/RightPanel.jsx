@@ -5,10 +5,11 @@ import {
   FileText,
   AlertTriangle,
   AlertCircle,
-  CheckCircle2,
   ChevronRight,
+  MessageSquare,
 } from "lucide-react";
 import TicketModal from "./TicketModal";
+import AgentChat from "./AgentChat";
 
 const AUDIENCE_LABELS = {
   student: "🎓 School Student",
@@ -56,13 +57,21 @@ const GRADE_COLORS = {
   F: "text-grade-f border-grade-f/40 bg-grade-f/10",
 };
 
-export default function RightPanel({ auditData, selectedDistrict, audience }) {
+export default function RightPanel({
+  auditData,
+  selectedDistrict,
+  audience,
+  chatMessages,
+  onChatSend,
+  isChatLoading,
+}) {
   const [activeTab, setActiveTab] = useState("inspector");
   const [showTicketModal, setShowTicketModal] = useState(false);
 
   const tabs = [
     { id: "inspector", label: "Inspector", icon: Info },
-    { id: "audit", label: "Global Audit", icon: ShieldAlert },
+    { id: "chat", label: "Agent Chat", icon: MessageSquare },
+    { id: "audit", label: "Audit", icon: ShieldAlert },
   ];
 
   return (
@@ -77,31 +86,44 @@ export default function RightPanel({ auditData, selectedDistrict, audience }) {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`
-                  flex-1 flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-semibold
+                  flex-1 flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-semibold
                   tracking-wider uppercase transition-all duration-200 border-b-2
                   ${
                     activeTab === tab.id
-                      ? "text-accent border-accent bg-accent/5"
+                      ? tab.id === "chat"
+                        ? "text-sky-400 border-sky-400 bg-sky-400/5"
+                        : "text-accent border-accent bg-accent/5"
                       : "text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-800/30"
                   }
                 `}
               >
                 <TabIcon className="w-3.5 h-3.5" />
-                {tab.label}
+                <span className="hidden xl:inline">{tab.label}</span>
               </button>
             );
           })}
         </div>
 
         {/* ── Tab Content ── */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-hidden flex flex-col">
           {activeTab === "inspector" ? (
-            <InspectorTab
-              district={selectedDistrict}
-              audience={audience}
+            <div className="flex-1 overflow-y-auto">
+              <InspectorTab
+                district={selectedDistrict}
+                audience={audience}
+              />
+            </div>
+          ) : activeTab === "chat" ? (
+            <AgentChat
+              selectedDistrict={selectedDistrict}
+              chatMessages={chatMessages}
+              onSendMessage={onChatSend}
+              isChatLoading={isChatLoading}
             />
           ) : (
-            <AuditTab auditData={auditData} />
+            <div className="flex-1 overflow-y-auto">
+              <AuditTab auditData={auditData} />
+            </div>
           )}
         </div>
 
@@ -153,14 +175,26 @@ function InspectorTab({ district, audience }) {
   }
 
   const description = district.descriptions?.[audience] || "No description available.";
+  const status = district.status || "COMPLIANT";
 
   return (
     <div className="p-4 space-y-4 animate-fade-in">
       {/* ── District Header ── */}
       <div className="bg-canvas rounded-xl border border-border p-4">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center justify-between mb-1">
           <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
             District ID: {district.id}
+          </span>
+          <span
+            className={`text-[9px] font-mono font-bold tracking-widest px-2 py-0.5 rounded border ${
+              status === "CRITICAL"
+                ? "text-status-critical border-status-critical/30 bg-status-critical/10"
+                : status === "WARNING"
+                ? "text-status-warning border-status-warning/30 bg-status-warning/10"
+                : "text-status-compliant border-status-compliant/30 bg-status-compliant/10"
+            }`}
+          >
+            {status}
           </span>
         </div>
         <h3 className="text-lg font-bold text-white mb-1">{district.name}</h3>
@@ -248,6 +282,35 @@ function AuditTab({ auditData }) {
           <span>{auditData.districts?.length || 0} Districts</span>
           <span>•</span>
           <span>{auditData.complianceViolations?.length || 0} Violations</span>
+          <span>•</span>
+          <span>{auditData.executionTraces?.length || 0} Traces</span>
+        </div>
+      </div>
+
+      {/* ── District Status Summary ── */}
+      <div className="bg-canvas rounded-xl border border-border p-4">
+        <h4 className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mb-3">
+          District Health Overview
+        </h4>
+        <div className="grid grid-cols-3 gap-2">
+          {["COMPLIANT", "WARNING", "CRITICAL"].map((status) => {
+            const count =
+              auditData.districts?.filter((d) => d.status === status).length || 0;
+            const colors = {
+              COMPLIANT: "text-status-compliant bg-status-compliant/10 border-status-compliant/20",
+              WARNING: "text-status-warning bg-status-warning/10 border-status-warning/20",
+              CRITICAL: "text-status-critical bg-status-critical/10 border-status-critical/20",
+            };
+            return (
+              <div
+                key={status}
+                className={`text-center py-2 rounded-lg border ${colors[status]}`}
+              >
+                <div className="text-lg font-bold">{count}</div>
+                <div className="text-[9px] font-mono tracking-wider">{status}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -311,6 +374,23 @@ function ViolationCard({ violation, config, Icon }) {
             <p className="text-xs text-zinc-400 leading-relaxed">
               {violation.remediation}
             </p>
+            {violation.affectedDistricts && violation.affectedDistricts.length > 0 && (
+              <div className="mt-2">
+                <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mb-1">
+                  Affected Districts
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {violation.affectedDistricts.map((id) => (
+                    <span
+                      key={id}
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${config.border} ${config.color}`}
+                    >
+                      {id}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

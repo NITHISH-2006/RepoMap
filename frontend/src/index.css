@@ -38,12 +38,24 @@
     text-shadow: 0 0 10px rgba(0, 255, 0, 0.5), 0 0 20px rgba(0, 255, 0, 0.2);
   }
 
+  .text-glow-blue {
+    text-shadow: 0 0 10px rgba(0, 191, 255, 0.5), 0 0 20px rgba(0, 191, 255, 0.2);
+  }
+
   .border-glow {
     box-shadow: 0 0 10px rgba(0, 255, 0, 0.3), inset 0 0 10px rgba(0, 255, 0, 0.05);
   }
 
   .border-glow-red {
     box-shadow: 0 0 10px rgba(255, 59, 59, 0.4), inset 0 0 10px rgba(255, 59, 59, 0.05);
+  }
+
+  .border-glow-blue {
+    box-shadow: 0 0 15px rgba(0, 191, 255, 0.5), inset 0 0 10px rgba(0, 191, 255, 0.05);
+  }
+
+  .border-glow-orange {
+    box-shadow: 0 0 10px rgba(255, 140, 0, 0.3), inset 0 0 10px rgba(255, 140, 0, 0.05);
   }
 
   .grid-bg {
@@ -68,6 +80,23 @@
     background: linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.15), transparent);
     animation: scan-line 3s linear infinite;
   }
+
+  /* ── Node dimming for execution traces ── */
+  .node-dimmed {
+    opacity: 0.2 !important;
+    filter: grayscale(0.8);
+    transition: all 0.5s ease;
+  }
+
+  .node-traced {
+    opacity: 1 !important;
+    filter: none;
+    transition: all 0.3s ease;
+  }
+
+  .node-trace-active {
+    z-index: 10;
+  }
 }
 
 /* ─── React Flow Overrides ──────────────────────────────────────── */
@@ -86,9 +115,32 @@
   animation: dash 1s linear infinite !important;
 }
 
+/* Trace-active edges glow bright cyan */
+.react-flow__edge.trace-active .react-flow__edge-path {
+  stroke: #00BFFF !important;
+  stroke-width: 3 !important;
+  stroke-dasharray: 8 4 !important;
+  filter: drop-shadow(0 0 6px rgba(0, 191, 255, 0.7));
+  animation: dash-fast 0.5s linear infinite !important;
+}
+
+/* Dimmed edges during tracing */
+.react-flow__edge.trace-dimmed .react-flow__edge-path {
+  stroke: #1a1a1e !important;
+  stroke-width: 1 !important;
+  opacity: 0.3 !important;
+  animation: none !important;
+}
+
 @keyframes dash {
   to {
     stroke-dashoffset: -10;
+  }
+}
+
+@keyframes dash-fast {
+  to {
+    stroke-dashoffset: -24;
   }
 }
 
@@ -120,4 +172,63 @@
 
 .react-flow__attribution {
   display: none !important;
+}
+
+/* ─── Chat Styles ──────────────────────────────────────────────── */
+.chat-message-user {
+  background: linear-gradient(135deg, #1A1D21, #1E2127);
+  border-left: 3px solid #00FF00;
+}
+
+.chat-message-agent {
+  background: linear-gradient(135deg, #0D1117, #111520);
+  border-left: 3px solid #00BFFF;
+}
+
+.chat-message-agent pre {
+  background: #0a0c10;
+  border: 1px solid #27272A;
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.chat-message-agent code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #e4e4e7;
+}
+
+.chat-message-agent p code {
+  background: rgba(0, 191, 255, 0.1);
+  border: 1px solid rgba(0, 191, 255, 0.2);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+/* ─── Typing Indicator ─────────────────────────────────────────── */
+.typing-indicator span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #00BFFF;
+  margin: 0 2px;
+  animation: typing-dot 1.4s infinite;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing-dot {
+  0%, 20% { opacity: 0.2; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+  100% { opacity: 0.2; transform: scale(0.8); }
 }
