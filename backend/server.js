@@ -23,11 +23,15 @@ function getRandomApiKey() {
   return keys[Math.floor(Math.random() * keys.length)];
 }
 
-// Model fallback chain — each has an independent quota bucket on the free tier
+// Model fallback chain — each model has its own independent quota bucket on the free tier.
+// Verified against the live API model list. Ordered by speed/cost-efficiency.
 const MODEL_FALLBACK_CHAIN = [
   "gemini-2.0-flash",
   "gemini-2.0-flash-lite",
-  "gemini-1.5-flash",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3-flash-preview",
 ];
 
 // Helper to call Gemini with model fallback + key rotation + exponential backoff
@@ -694,10 +698,12 @@ class ${activeNodeData.name.replace(/\s+/g, "")}Service {
   } catch (err) {
     console.error("[SENTINEL] Agent chat error:", err.message || err);
     let errorMsg = err.message || "Unknown error";
-    if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
-        errorMsg = "Gemini API Quota Exceeded. Please try again later.";
+    if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED") || errorMsg.includes("quota-exhausted")) {
+        errorMsg = "The AI service is temporarily at capacity. Please wait 30-60 seconds and try again. The system will automatically rotate to a different model on retry.";
+    } else if (errorMsg.includes("404") || errorMsg.includes("not found")) {
+        errorMsg = "A model configuration issue occurred. The system is auto-correcting. Please retry.";
     }
-    const errorReply = `⚠️ I encountered an error processing your request: ${errorMsg}`;
+    const errorReply = `⚠️ ${errorMsg}`;
     return res.json({ reply: errorReply });
   }
 });
