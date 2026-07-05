@@ -10,13 +10,36 @@ import axios from "axios";
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
 // Helper to load-balance across multiple comma-separated GEMINI API keys
 function getRandomApiKey() {
   const keys = (process.env.GEMINI_API_KEY || "").split(",").map(k => k.trim()).filter(Boolean);
   if (keys.length === 0) return "";
   return keys[Math.floor(Math.random() * keys.length)];
+}
+
+// Helper to call Gemini with exponential backoff and key rotation
+async function callGeminiWithRetry(generateContentParams, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const activeKey = getRandomApiKey();
+      console.log(`[SENTINEL] Attempt ${i + 1}/${maxRetries}: Using API Key ending in ...${activeKey.slice(-4)}`);
+      const ai = new GoogleGenAI({ apiKey: activeKey });
+      
+      const response = await ai.models.generateContent(generateContentParams);
+      return response;
+    } catch (err) {
+      const errorMsg = err.message || String(err);
+      const isRateLimit = errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED");
+      
+      if (isRateLimit && i < maxRetries - 1) {
+        const delay = (i + 1) * 4000; // Wait 4s, 8s before retrying
+        console.warn(`[SENTINEL] Rate Limit Hit. Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 const app = express();
@@ -413,11 +436,7 @@ app.post("/api/audit", async (req, res) => {
     result = { ...FAILSAFE_MOCK, isMock: true, apiError: "No API Key Provided" };
   } else {
     try {
-      const activeKey = getRandomApiKey();
-      console.log(`[SENTINEL] Using API Key ending in ...${activeKey.slice(-4)}`);
-      const ai = new GoogleGenAI({ apiKey: activeKey });
-
-      const response = await ai.models.generateContent({
+      const response = await callGeminiWithRetry({
         model: "gemini-2.0-flash",
         contents: [
           {
@@ -583,9 +602,6 @@ class ${activeNodeData.name.replace(/\s+/g, "")}Service {
   }
 
   try {
-    const activeKey = getRandomApiKey();
-    const ai = new GoogleGenAI({ apiKey: activeKey });
-
     // Fetch recent chat history for context continuity
     let chatHistory = [];
     if (scanId && nodeId) {
@@ -607,7 +623,7 @@ class ${activeNodeData.name.replace(/\s+/g, "")}Service {
       text: `${CHAT_SYSTEM_PROMPT}\n\n${nodeContext}\n\n---\nUser question: ${userMessage}`,
     });
 
-    const response = await ai.models.generateContent({
+    const response = await callGeminiWithRetry({
       model: "gemini-2.0-flash",
       contents: [
         {
