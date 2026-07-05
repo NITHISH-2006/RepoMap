@@ -767,6 +767,42 @@ app.delete("/api/history/:id", (req, res) => {
 });
 
 // ─── GitHub Repo Tree Fetcher ────────────────────────────────────────────────
+
+// Helper: Convert flat file paths into a visual hierarchical tree string
+function buildHierarchicalTree(paths, rootName) {
+  const root = {};
+  paths.forEach(p => {
+    const parts = p.split('/');
+    let current = root;
+    parts.forEach(part => {
+      if (!current[part]) current[part] = {};
+      current = current[part];
+    });
+  });
+
+  const lines = [`${rootName}/`];
+  function render(node, prefix) {
+    const entries = Object.keys(node).sort((a, b) => {
+      // Directories first (have children), then files
+      const aIsDir = Object.keys(node[a]).length > 0;
+      const bIsDir = Object.keys(node[b]).length > 0;
+      if (aIsDir && !bIsDir) return -1;
+      if (!aIsDir && bIsDir) return 1;
+      return a.localeCompare(b);
+    });
+    entries.forEach((name, i) => {
+      const isLast = i === entries.length - 1;
+      const connector = isLast ? '└── ' : '├── ';
+      const childPrefix = isLast ? '    ' : '│   ';
+      const isDir = Object.keys(node[name]).length > 0;
+      lines.push(`${prefix}${connector}${name}${isDir ? '/' : ''}`);
+      if (isDir) render(node[name], prefix + childPrefix);
+    });
+  }
+  render(root, '');
+  return lines.join('\n');
+}
+
 app.post("/api/github/fetch-tree", async (req, res) => {
   const { repoUrl } = req.body;
   
@@ -790,34 +826,46 @@ app.post("/api/github/fetch-tree", async (req, res) => {
     // 4. AGGRESSIVE FILTERING (Crucial for AI Context Limits)
     const excludePatterns = [
       'node_modules', '.git', 'dist', 'build', 'out', 'coverage', 
-      'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', '.DS_Store'
+      'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', '.DS_Store',
+      '.env', '.vscode', '.idea', '__pycache__', '.next', '.cache'
     ];
-    const excludeExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.mp4', '.pdf'];
+    const excludeExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.mp4', '.pdf', '.woff', '.woff2', '.ttf', '.eot'];
 
-    const filteredTree = treeData.data.tree
-      .filter(item => item.type === 'blob') // Only files, not folders
+    const filteredPaths = treeData.data.tree
+      .filter(item => item.type === 'blob')
       .map(item => item.path)
       .filter(path => {
         const hasExcludedDir = excludePatterns.some(pattern => path.includes(pattern));
         const hasExcludedExt = excludeExtensions.some(ext => path.endsWith(ext));
         return !hasExcludedDir && !hasExcludedExt;
       })
-      .slice(0, 400); // 🚨 CRITICAL: Limit to 400 files to prevent Gemini API quota/token exhaustion
+      .slice(0, 300); // Limit to 300 files to keep AI context manageable
 
-    if (filteredTree.length === 0) {
+    if (filteredPaths.length === 0) {
       return res.status(400).json({ error: "No parseable code files found in repository." });
     }
 
-    // 5. Send this filtered tree to your existing Gemini /api/audit logic
+    // 5. Convert flat paths into a hierarchical tree string for AI analysis
+    const fileTree = buildHierarchicalTree(filteredPaths, repo);
+
+    console.log(`[SENTINEL] GitHub tree built for ${owner}/${repo}: ${filteredPaths.length} files`);
+
     res.json({ 
       success: true, 
       repoName: `${owner}/${repo}`,
-      fileTree: filteredTree.join('\n') 
+      fileTree
     });
 
   } catch (error) {
     console.error("GitHub Fetch Error:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to fetch repository. Check URL or GitHub API limits." });
+    const status = error.response?.status;
+    if (status === 404) {
+      res.status(404).json({ error: "Repository not found. Make sure it exists and is public." });
+    } else if (status === 403) {
+      res.status(429).json({ error: "GitHub API rate limit hit. Add a GITHUB_TOKEN to your .env for higher limits." });
+    } else {
+      res.status(500).json({ error: "Failed to fetch repository. Check the URL and try again." });
+    }
   }
 });
 
