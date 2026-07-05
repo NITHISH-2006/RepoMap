@@ -105,7 +105,7 @@ repoMap/
 └── .gitignore
 ```
 
-## 🎯 Demo Flow (For Presentations)
+<!-- ## 🎯 Demo Flow (For Presentations)
 
 1. **Paste a file tree** (or GitHub URL) and hit **Execute Analysis**
 2. Watch the terminal animation and graph build itself
@@ -114,7 +114,7 @@ repoMap/
 5. **Click a red/critical node** on the graph
 6. Switch to the **Agent Chat** tab and type: *"Generate the exact code I need to fix this compliance violation"*
 7. Watch the AI generate scoped, contextual code in the chat panel
-8. Show the **Scan History** tab — past scans persist across sessions via SQLite
+8. Show the **Scan History** tab — past scans persist across sessions via SQLite -->
 
 ## 📄 License
 
