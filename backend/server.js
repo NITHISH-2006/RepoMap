@@ -729,7 +729,8 @@ app.post("/api/github/fetch-tree", async (req, res) => {
         const hasExcludedDir = excludePatterns.some(pattern => path.includes(pattern));
         const hasExcludedExt = excludeExtensions.some(ext => path.endsWith(ext));
         return !hasExcludedDir && !hasExcludedExt;
-      });
+      })
+      .slice(0, 400); // 🚨 CRITICAL: Limit to 400 files to prevent Gemini API quota/token exhaustion
 
     if (filteredTree.length === 0) {
       return res.status(400).json({ error: "No parseable code files found in repository." });
