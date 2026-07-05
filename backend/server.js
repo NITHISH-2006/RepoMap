@@ -10,36 +10,69 @@ import axios from "axios";
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 // Helper to load-balance across multiple comma-separated GEMINI API keys
+function getAllApiKeys() {
+  return (process.env.GEMINI_API_KEY || "").split(",").map(k => k.trim()).filter(Boolean);
+}
+
 function getRandomApiKey() {
-  const keys = (process.env.GEMINI_API_KEY || "").split(",").map(k => k.trim()).filter(Boolean);
+  const keys = getAllApiKeys();
   if (keys.length === 0) return "";
   return keys[Math.floor(Math.random() * keys.length)];
 }
 
-// Helper to call Gemini with exponential backoff and key rotation
-async function callGeminiWithRetry(generateContentParams, maxRetries = 3) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const activeKey = getRandomApiKey();
-      console.log(`[SENTINEL] Attempt ${i + 1}/${maxRetries}: Using API Key ending in ...${activeKey.slice(-4)}`);
-      const ai = new GoogleGenAI({ apiKey: activeKey });
-      
-      const response = await ai.models.generateContent(generateContentParams);
-      return response;
-    } catch (err) {
-      const errorMsg = err.message || String(err);
-      const isRateLimit = errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED");
-      
-      if (isRateLimit && i < maxRetries - 1) {
-        const delay = (i + 1) * 4000; // Wait 4s, 8s before retrying
-        console.warn(`[SENTINEL] Rate Limit Hit. Retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      } else {
-        throw err;
+// Model fallback chain — each has an independent quota bucket on the free tier
+const MODEL_FALLBACK_CHAIN = [
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+];
+
+// Helper to call Gemini with model fallback + key rotation + exponential backoff
+async function callGeminiWithRetry(generateContentParams, maxRetries = 2) {
+  const keys = getAllApiKeys();
+  if (keys.length === 0) throw new Error("No API keys configured");
+
+  const errors = [];
+
+  for (const model of MODEL_FALLBACK_CHAIN) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // Cycle through keys deterministically so we try every key before giving up
+      const key = keys[(attempt) % keys.length];
+      const keyHint = key.slice(-4);
+
+      try {
+        console.log(`[SENTINEL] Model: ${model} | Key: ...${keyHint} | Attempt ${attempt + 1}/${maxRetries}`);
+        const ai = new GoogleGenAI({ apiKey: key });
+
+        const params = { ...generateContentParams, model };
+        const response = await ai.models.generateContent(params);
+        console.log(`[SENTINEL] ✓ Success with model: ${model}`);
+        return response;
+      } catch (err) {
+        const msg = err.message || String(err);
+        const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED");
+        errors.push(`${model}/${keyHint}: ${msg.slice(0, 80)}`);
+
+        if (isQuota) {
+          console.warn(`[SENTINEL] ✗ Quota hit on ${model}/...${keyHint}. ${attempt < maxRetries - 1 ? "Retrying with next key..." : "Falling back to next model..."}`);
+          if (attempt < maxRetries - 1) {
+            await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          }
+          // If all retries exhausted for this model, break to next model
+          continue;
+        } else {
+          // Non-quota error — throw immediately (bad request, auth, etc.)
+          throw err;
+        }
       }
     }
   }
+
+  // All models and keys exhausted
+  throw new Error(`All Gemini models quota-exhausted. Tried: ${errors.join(" | ")}`);
 }
 
 const app = express();
@@ -206,18 +239,25 @@ const auditResponseSchema = {
   ],
 };
 
-// ─── System Prompt ───────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are RepoMap Sentinel, an elite software architecture analysis engine. 
-Given a project's file/directory tree, you must:
+const SYSTEM_PROMPT = `You are RepoMap Sentinel, a software architecture analysis engine.
+Given a project's file/directory tree, analyze and return structured JSON:
 
-1. DETECT the primary architecture pattern (e.g., Clean Architecture, MVC, Hexagonal, Layered Monolith, Microservices, Feature-Sliced).
-2. GRADE the technical debt from A (excellent) to F (critical), considering coupling, cohesion, naming conventions, separation of concerns, and test coverage presence.
-3. IDENTIFY compliance violations — issues like circular dependencies, layer violations, missing abstractions, god classes, hardcoded config, missing tests, security anti-patterns. For each violation, list the affected district IDs.
-4. MAP the codebase into logical "districts" (architectural modules/boundaries). Each district MUST have a status: COMPLIANT (healthy), WARNING (minor issues), or CRITICAL (major problems). Describe each district for four audiences: a school student, a junior developer, a senior architect, and a product manager.
-5. DEFINE connections between districts based on dependency flow.
-6. GENERATE 2-4 execution traces showing common data flow paths through the architecture (e.g., "User Login Flow", "Data Write Flow", "API Request Flow"). Each trace is an ordered array of district IDs.
+1. DETECT the architecture pattern (Clean Architecture, MVC, Hexagonal, Monolith, Microservices, Feature-Sliced, etc.).
+2. GRADE technical debt A (excellent) to F (critical).
+3. IDENTIFY 3-5 compliance violations with affected district IDs.
+4. MAP the codebase into 4-8 logical "districts" (modules/boundaries) based on the ACTUAL folder structure. Each district should correspond to a real directory or group of related directories in the tree.
+   - District IDs must use the format "dist-<name>" (e.g., "dist-api", "dist-models", "dist-auth").
+   - The "name" field should be human-readable (e.g., "API Routes", "Data Models", "Auth Module").
+   - "connectsTo" must ONLY reference other district IDs that actually exist in your output.
+   - Set status: COMPLIANT, WARNING, or CRITICAL. Include at least one WARNING and one CRITICAL.
+   - Provide genuinely different descriptions for each audience level.
+5. DEFINE connections (connectsTo) showing real dependency flow between districts — which modules import from or depend on which.
+6. GENERATE 2-3 execution traces showing realistic request flows through the districts.
 
-Be thorough. Provide at least 4–8 districts, 3–5 compliance violations, and 2–4 execution traces. Make descriptions genuinely tailored to each audience level. Ensure at least one district has CRITICAL status and one has WARNING status.`;
+CRITICAL RULES:
+- Every ID in "connectsTo" MUST match an "id" in your districts array. No dangling references.
+- Base districts on the ACTUAL folders/files in the tree, not generic templates.
+- Connections should reflect real import/dependency patterns visible from the file structure.`;
 
 // ─── Chat System Prompt ──────────────────────────────────────────────────────
 const CHAT_SYSTEM_PROMPT = `You are RepoMap Sentinel's Context-Aware Engineering Agent. You are an expert software architect and mentor.
@@ -777,11 +817,13 @@ app.post("/api/github/fetch-tree", async (req, res) => {
 
 // ─── Start Server ────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`\n  ╔══════════════════════════════════════════════╗`);
-  console.log(`  ║   REPOMAP SENTINEL v2.0 — ACTIVE AGENT      ║`);
-  console.log(`  ║   Port: ${PORT}                                 ║`);
-  console.log(`  ║   Gemini: ${process.env.GEMINI_API_KEY ? "CONFIGURED ✓" : "NOT SET (mock mode) ✗"}       ║`);
-  console.log(`  ║   SQLite: READY ✓                            ║`);
-  console.log(`  ║   GitHub: ${process.env.GITHUB_TOKEN ? "TOKEN SET ✓" : "PUBLIC ONLY ✗"}            ║`);
-  console.log(`  ╚══════════════════════════════════════════════╝\n`);
+  const keyCount = getAllApiKeys().length;
+  console.log(`\n  ╔══════════════════════════════════════════════════════╗`);
+  console.log(`  ║   REPOMAP SENTINEL v2.1 — ACTIVE AGENT              ║`);
+  console.log(`  ║   Port: ${PORT}                                         ║`);
+  console.log(`  ║   Gemini Keys: ${keyCount > 0 ? `${keyCount} key(s) loaded ✓` : "NOT SET (mock mode) ✗"}                  ║`);
+  console.log(`  ║   Models: ${MODEL_FALLBACK_CHAIN.join(" → ")}   ║`);
+  console.log(`  ║   SQLite: READY ✓                                    ║`);
+  console.log(`  ║   GitHub: ${process.env.GITHUB_TOKEN ? "TOKEN SET ✓" : "PUBLIC ONLY ✗"}                            ║`);
+  console.log(`  ╚══════════════════════════════════════════════════════╝\n`);
 });
