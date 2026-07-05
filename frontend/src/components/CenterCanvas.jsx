@@ -6,93 +6,47 @@ import {
   MiniMap,
   useNodesState,
   useEdgesState,
+  MarkerType
 } from "@xyflow/react";
+import dagre from "dagre";
 import "@xyflow/react/dist/style.css";
 import { Radar, Loader2, Route, ChevronDown, X } from "lucide-react";
 import DistrictNode from "./DistrictNode";
 
 const nodeTypes = { district: DistrictNode };
 
-// ── Layout: arrange nodes in a layered grid ──
-const LAYER_ORDER = [
-  "config",
-  "presentation",
-  "application",
-  "domain",
-  "infrastructure",
-  "shared",
-  "testing",
-];
-
+// ── Layout: arrange nodes using dagre ──
 function computeLayout(districts) {
-  // Group by layer
-  const layerGroups = {};
-  districts.forEach((d) => {
-    const layer = d.layer?.toLowerCase() || "shared";
-    if (!layerGroups[layer]) layerGroups[layer] = [];
-    layerGroups[layer].push(d);
-  });
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+  
+  // Set layout direction (Top to Bottom) and spacing as requested
+  dagreGraph.setGraph({ rankdir: 'TB', ranker: 'longest-path', nodesep: 100, ranksep: 200 });
 
   const nodes = [];
-  let yOffset = 0;
-  const nodeSpacingX = 260;
-  const nodeSpacingY = 170;
-
-  LAYER_ORDER.forEach((layer) => {
-    const group = layerGroups[layer];
-    if (!group) return;
-
-    const totalWidth = group.length * nodeSpacingX;
-    const startX = -totalWidth / 2 + nodeSpacingX / 2;
-
-    group.forEach((d, i) => {
-      nodes.push({
-        id: d.id,
-        type: "district",
-        position: { x: startX + i * nodeSpacingX, y: yOffset },
-        data: {
-          name: d.name,
-          layer: d.layer,
-          status: d.status || "COMPLIANT",
-          connectionCount: d.connectsTo?.length || 0,
-          isTraced: false,
-          isTraceDimmed: false,
-        },
-      });
-    });
-
-    yOffset += nodeSpacingY;
-  });
-
-  // Place any districts that didn't match LAYER_ORDER
-  const placedLayers = new Set(LAYER_ORDER);
-  Object.entries(layerGroups).forEach(([layer, group]) => {
-    if (placedLayers.has(layer)) return;
-    const totalWidth = group.length * nodeSpacingX;
-    const startX = -totalWidth / 2 + nodeSpacingX / 2;
-
-    group.forEach((d, i) => {
-      nodes.push({
-        id: d.id,
-        type: "district",
-        position: { x: startX + i * nodeSpacingX, y: yOffset },
-        data: {
-          name: d.name,
-          layer: d.layer,
-          status: d.status || "COMPLIANT",
-          connectionCount: d.connectsTo?.length || 0,
-          isTraced: false,
-          isTraceDimmed: false,
-        },
-      });
-    });
-
-    yOffset += nodeSpacingY;
-  });
-
-  // Build edges
-  const nodeIdSet = new Set(districts.map((d) => d.id));
   const edges = [];
+
+  // 1. Prepare nodes
+  districts.forEach((d) => {
+    nodes.push({
+      id: d.id,
+      type: "district",
+      position: { x: 0, y: 0 },
+      data: {
+        name: d.name,
+        layer: d.layer,
+        status: d.status || "COMPLIANT",
+        connectionCount: d.connectsTo?.length || 0,
+        isTraced: false,
+        isTraceDimmed: false,
+      },
+    });
+    // Set node dimensions in dagre (approximate size of DistrictNode)
+    dagreGraph.setNode(d.id, { width: 300, height: 150 });
+  });
+
+  // 2. Prepare edges
+  const nodeIdSet = new Set(districts.map((d) => d.id));
   districts.forEach((d) => {
     if (d.connectsTo) {
       d.connectsTo.forEach((targetId) => {
@@ -100,8 +54,7 @@ function computeLayout(districts) {
           const sourceStatus = d.status || "COMPLIANT";
           const targetDistrict = districts.find((t) => t.id === targetId);
           const targetStatus = targetDistrict?.status || "COMPLIANT";
-          const hasViolation =
-            sourceStatus === "CRITICAL" || targetStatus === "CRITICAL";
+          const hasViolation = sourceStatus === "CRITICAL" || targetStatus === "CRITICAL";
 
           edges.push({
             id: `${d.id}-${targetId}`,
@@ -113,10 +66,29 @@ function computeLayout(districts) {
               strokeWidth: 2,
               opacity: 0.6,
             },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: hasViolation ? "#FF3B3B" : "#00FF00",
+            },
           });
+          dagreGraph.setEdge(d.id, targetId);
         }
       });
     }
+  });
+
+  // 3. Compute layout
+  dagre.layout(dagreGraph);
+
+  // 4. Apply calculated positions
+  nodes.forEach((node) => {
+    const nodeWithPosition = dagreGraph.node(node.id);
+    node.targetPosition = 'top';
+    node.sourcePosition = 'bottom';
+    node.position = {
+      x: nodeWithPosition.x - 150, // shift by half width to center
+      y: nodeWithPosition.y - 75,  // shift by half height to center
+    };
   });
 
   return { nodes, edges };

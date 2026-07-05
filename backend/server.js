@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import Database from "better-sqlite3";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import axios from "axios";
 
 dotenv.config();
 
@@ -696,155 +697,56 @@ app.delete("/api/history/:id", (req, res) => {
 // ─── GitHub Repo Tree Fetcher ────────────────────────────────────────────────
 app.post("/api/github/fetch-tree", async (req, res) => {
   const { repoUrl } = req.body;
-
-  if (!repoUrl || typeof repoUrl !== "string") {
-    return res.status(400).json({ error: "Missing or invalid repoUrl" });
-  }
-
-  // Parse owner/repo from various GitHub URL formats
-  const match = repoUrl.match(
-    /(?:https?:\/\/)?(?:www\.)?github\.com\/([^\/\s]+)\/([^\/\s#?]+)/
-  );
-  if (!match) {
-    return res.status(400).json({
-      error: "Invalid GitHub URL. Expected format: https://github.com/owner/repo",
-    });
-  }
-
-  const owner = match[1];
-  const repo = match[2].replace(/\.git$/, "");
-
-  console.log(`[SENTINEL] Fetching GitHub tree for ${owner}/${repo}...`);
-
+  
   try {
-    // First, get the default branch
-    const headers = {
-      Accept: "application/vnd.github.v3+json",
-      "User-Agent": "RepoMap-Sentinel",
-    };
-    if (process.env.GITHUB_TOKEN) {
-      headers.Authorization = `token ${process.env.GITHUB_TOKEN}`;
+    // 1. Extract owner and repo from URL
+    const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (!match) return res.status(400).json({ error: "Invalid GitHub URL" });
+    const owner = match[1];
+    const repo = match[2].replace('.git', '');
+
+    const headers = process.env.GITHUB_TOKEN ? { Authorization: `token ${process.env.GITHUB_TOKEN}` } : {};
+
+    // 2. Get default branch
+    const repoInfo = await axios.get(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+    const defaultBranch = repoInfo.data.default_branch;
+
+    // 3. Fetch recursive tree
+    const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`;
+    const treeData = await axios.get(treeUrl, { headers });
+
+    // 4. AGGRESSIVE FILTERING (Crucial for AI Context Limits)
+    const excludePatterns = [
+      'node_modules', '.git', 'dist', 'build', 'out', 'coverage', 
+      'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', '.DS_Store'
+    ];
+    const excludeExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.mp4', '.pdf'];
+
+    const filteredTree = treeData.data.tree
+      .filter(item => item.type === 'blob') // Only files, not folders
+      .map(item => item.path)
+      .filter(path => {
+        const hasExcludedDir = excludePatterns.some(pattern => path.includes(pattern));
+        const hasExcludedExt = excludeExtensions.some(ext => path.endsWith(ext));
+        return !hasExcludedDir && !hasExcludedExt;
+      });
+
+    if (filteredTree.length === 0) {
+      return res.status(400).json({ error: "No parseable code files found in repository." });
     }
 
-    const repoResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-      headers,
-    });
-
-    if (!repoResponse.ok) {
-      if (repoResponse.status === 404) {
-        return res.status(404).json({ error: "Repository not found. Make sure it's public or provide a GITHUB_TOKEN." });
-      }
-      if (repoResponse.status === 403) {
-        return res.status(429).json({ error: "GitHub API rate limit exceeded. Add a GITHUB_TOKEN to .env for higher limits." });
-      }
-      throw new Error(`GitHub API returned ${repoResponse.status}`);
-    }
-
-    const repoData = await repoResponse.json();
-    const defaultBranch = repoData.default_branch || "main";
-
-    // Fetch the tree recursively
-    const treeResponse = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`,
-      { headers }
-    );
-
-    if (!treeResponse.ok) {
-      throw new Error(`Failed to fetch tree: ${treeResponse.status}`);
-    }
-
-    const treeData = await treeResponse.json();
-
-    if (!treeData.tree || treeData.tree.length === 0) {
-      return res.status(400).json({ error: "Repository appears to be empty" });
-    }
-
-    // Convert flat list to tree-formatted string
-    const fileTree = buildTreeString(treeData.tree, repo);
-
-    console.log(
-      `[SENTINEL] GitHub tree fetched: ${treeData.tree.length} items from ${owner}/${repo}`
-    );
-
-    return res.json({
-      fileTree,
+    // 5. Send this filtered tree to your existing Gemini /api/audit logic
+    res.json({ 
+      success: true, 
       repoName: `${owner}/${repo}`,
-      branch: defaultBranch,
-      fileCount: treeData.tree.filter((t) => t.type === "blob").length,
+      fileTree: filteredTree.join('\n') 
     });
-  } catch (err) {
-    console.error("[SENTINEL] GitHub fetch error:", err.message || err);
-    return res.status(500).json({
-      error: `Failed to fetch repository: ${err.message}`,
-    });
+
+  } catch (error) {
+    console.error("GitHub Fetch Error:", error.response?.data || error.message);
+    res.status(500).json({ error: "Failed to fetch repository. Check URL or GitHub API limits." });
   }
 });
-
-/**
- * Converts a flat GitHub tree API response into a formatted tree string
- */
-function buildTreeString(treeItems, rootName) {
-  // Filter out items we don't need and limit size
-  const filtered = treeItems
-    .filter((item) => {
-      const path = item.path.toLowerCase();
-      // Skip common noise directories
-      return (
-        !path.startsWith("node_modules/") &&
-        !path.startsWith(".git/") &&
-        !path.startsWith("vendor/") &&
-        !path.startsWith("__pycache__/") &&
-        !path.startsWith(".next/") &&
-        !path.startsWith("dist/") &&
-        !path.startsWith("build/") &&
-        !path.includes("/node_modules/")
-      );
-    })
-    .slice(0, 500); // Limit to 500 items to avoid overwhelming the AI
-
-  // Build hierarchical structure
-  const root = { name: rootName, children: {}, type: "tree" };
-
-  filtered.forEach((item) => {
-    const parts = item.path.split("/");
-    let current = root;
-
-    parts.forEach((part, index) => {
-      if (!current.children[part]) {
-        current.children[part] = {
-          name: part,
-          children: {},
-          type: index === parts.length - 1 ? item.type : "tree",
-        };
-      }
-      current = current.children[part];
-    });
-  });
-
-  // Render tree string
-  const lines = [`${rootName}/`];
-  renderTree(root, "", lines);
-  return lines.join("\n");
-}
-
-function renderTree(node, prefix, lines) {
-  const entries = Object.values(node.children);
-  entries.forEach((child, index) => {
-    const isLast = index === entries.length - 1;
-    const connector = isLast ? "└── " : "├── ";
-    const childPrefix = isLast ? "    " : "│   ";
-
-    if (child.type === "tree") {
-      lines.push(`${prefix}${connector}${child.name}/`);
-    } else {
-      lines.push(`${prefix}${connector}${child.name}`);
-    }
-
-    if (Object.keys(child.children).length > 0) {
-      renderTree(child, prefix + childPrefix, lines);
-    }
-  });
-}
 
 // ─── Start Server ────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
