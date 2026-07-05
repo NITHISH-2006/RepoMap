@@ -12,6 +12,13 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Helper to load-balance across multiple comma-separated GEMINI API keys
+function getRandomApiKey() {
+  const keys = (process.env.GEMINI_API_KEY || "").split(",").map(k => k.trim()).filter(Boolean);
+  if (keys.length === 0) return "";
+  return keys[Math.floor(Math.random() * keys.length)];
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -406,7 +413,9 @@ app.post("/api/audit", async (req, res) => {
     result = { ...FAILSAFE_MOCK, isMock: true, apiError: "No API Key Provided" };
   } else {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const activeKey = getRandomApiKey();
+      console.log(`[SENTINEL] Using API Key ending in ...${activeKey.slice(-4)}`);
+      const ai = new GoogleGenAI({ apiKey: activeKey });
 
       const response = await ai.models.generateContent({
         model: "gemini-2.0-flash",
@@ -574,7 +583,8 @@ class ${activeNodeData.name.replace(/\s+/g, "")}Service {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const activeKey = getRandomApiKey();
+    const ai = new GoogleGenAI({ apiKey: activeKey });
 
     // Fetch recent chat history for context continuity
     let chatHistory = [];
