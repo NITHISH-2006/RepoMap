@@ -662,19 +662,35 @@ class ${activeNodeData.name.replace(/\s+/g, "")}Service {
     }
 
     // Build conversation with history
-    const conversationParts = [];
-    conversationParts.push({
-      text: `${CHAT_SYSTEM_PROMPT}\n\n${nodeContext}\n\n---\nUser question: ${userMessage}`,
+    const contents = [];
+
+    // First message: system prompt + node context
+    contents.push({
+      role: "user",
+      parts: [{ text: `${CHAT_SYSTEM_PROMPT}\n\n${nodeContext}` }],
+    });
+    contents.push({
+      role: "model",
+      parts: [{ text: "Understood. I'm scoped to the module described above. How can I help?" }],
+    });
+
+    // Inject prior chat history for context continuity
+    for (const msg of chatHistory) {
+      contents.push({
+        role: msg.role === "user" ? "user" : "model",
+        parts: [{ text: msg.content }],
+      });
+    }
+
+    // Current user message
+    contents.push({
+      role: "user",
+      parts: [{ text: userMessage }],
     });
 
     const response = await callGeminiWithRetry({
       model: "gemini-2.0-flash",
-      contents: [
-        {
-          role: "user",
-          parts: conversationParts,
-        },
-      ],
+      contents,
       config: {
         temperature: 0.6,
         maxOutputTokens: 2048,

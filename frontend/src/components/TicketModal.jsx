@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, Copy, Check, FileText } from "lucide-react";
+import { X, Copy, Check, FileText, Download } from "lucide-react";
 
 const AUDIENCE_LABELS = {
   student: "School Student",
@@ -103,6 +103,41 @@ export default function TicketModal({
     }
   };
 
+  const handleDownloadMarkdown = () => {
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sentinel-report-${Date.now()}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadJSON = () => {
+    const exportData = {
+      generatedAt: new Date().toISOString(),
+      audience,
+      detectedArchitecture: auditData.detectedArchitecture,
+      technicalDebtGrade: auditData.technicalDebtGrade,
+      districts: auditData.districts,
+      complianceViolations: auditData.complianceViolations,
+      executionTraces: auditData.executionTraces,
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sentinel-audit-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in"
@@ -141,9 +176,27 @@ export default function TicketModal({
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5" />
-                  Copy to Clipboard
+                  Copy
                 </>
               )}
+            </button>
+            <button
+              onClick={handleDownloadMarkdown}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+                         bg-canvas border border-border text-zinc-300
+                         hover:border-sky-400/40 hover:text-sky-400 transition-all duration-200"
+            >
+              <Download className="w-3.5 h-3.5" />
+              .md
+            </button>
+            <button
+              onClick={handleDownloadJSON}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+                         bg-canvas border border-border text-zinc-300
+                         hover:border-amber-400/40 hover:text-amber-400 transition-all duration-200"
+            >
+              <Download className="w-3.5 h-3.5" />
+              .json
             </button>
             <button
               onClick={onClose}
@@ -166,3 +219,4 @@ export default function TicketModal({
     </div>
   );
 }
+
