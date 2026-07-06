@@ -1,10 +1,12 @@
-﻿import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import Header from "./components/Header";
 import LeftPanel from "./components/LeftPanel";
 import CenterCanvas from "./components/CenterCanvas";
 import RightPanel from "./components/RightPanel";
 
 const AUDIENCES = ["student", "junior", "senior", "pm"];
+
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 export default function App() {
   const [audience, setAudience] = useState("junior");
@@ -26,7 +28,7 @@ export default function App() {
 
   const fetchHistory = async () => {
     try {
-      const response = await fetch("/api/history");
+      const response = await fetch(`${API_BASE}/api/history`);
       if (response.ok) {
         const data = await response.json();
         setScanHistory(data);
@@ -47,7 +49,7 @@ export default function App() {
     setScanId(null);
 
     try {
-      const response = await fetch("/api/audit", {
+      const response = await fetch(`${API_BASE}/api/audit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileTree, projectName: projectName || "Untitled Scan" }),
@@ -82,15 +84,21 @@ export default function App() {
     setError(null);
 
     try {
-      const response = await fetch("/api/github/fetch-tree", {
+      const response = await fetch(`${API_BASE}/api/github/fetch-tree`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repoUrl }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Server responded with ${response.status}`);
+        let errorMsg = `Server responded with ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch {
+          // Response body was empty or not JSON
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
@@ -110,7 +118,7 @@ export default function App() {
   // â”€â”€ Load Past Scan â”€â”€
   const handleLoadScan = useCallback(async (id) => {
     try {
-      const response = await fetch(`/api/history/${id}`);
+      const response = await fetch(`${API_BASE}/api/history/${id}`);
       if (!response.ok) throw new Error("Failed to load scan");
 
       const data = await response.json();
@@ -166,7 +174,7 @@ export default function App() {
           ),
         };
 
-        const response = await fetch("/api/agent/chat", {
+        const response = await fetch(`${API_BASE}/api/agent/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -205,7 +213,7 @@ export default function App() {
   // â”€â”€ Delete Scan â”€â”€
   const handleDeleteScan = useCallback(async (id) => {
     try {
-      await fetch(`/api/history/${id}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/api/history/${id}`, { method: "DELETE" });
       fetchHistory();
       // If we deleted the currently loaded scan, clear it
       if (scanId === id) {
