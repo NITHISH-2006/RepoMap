@@ -86,7 +86,8 @@ app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 
 // ─── SQLite Initialization ──────────────────────────────────────────────────
-const db = new Database(join(__dirname, "sentinel.db"));
+const dbPath = process.env.DATABASE_PATH || join(__dirname, "sentinel.db");
+const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
