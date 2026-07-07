@@ -287,31 +287,20 @@ function AuditTab({ auditData }) {
         </div>
       </div>
 
-      {/* ── District Status Summary ── */}
+      {/* ── District Status Summary Bar Chart ── */}
       <div className="bg-canvas rounded-xl border border-border p-4">
         <h4 className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mb-3">
-          District Health Overview
+          District Health Distribution
         </h4>
-        <div className="grid grid-cols-3 gap-2">
-          {["COMPLIANT", "WARNING", "CRITICAL"].map((status) => {
-            const count =
-              auditData.districts?.filter((d) => d.status === status).length || 0;
-            const colors = {
-              COMPLIANT: "text-status-compliant bg-status-compliant/10 border-status-compliant/20",
-              WARNING: "text-status-warning bg-status-warning/10 border-status-warning/20",
-              CRITICAL: "text-status-critical bg-status-critical/10 border-status-critical/20",
-            };
-            return (
-              <div
-                key={status}
-                className={`text-center py-2 rounded-lg border ${colors[status]}`}
-              >
-                <div className="text-lg font-bold">{count}</div>
-                <div className="text-[9px] font-mono tracking-wider">{status}</div>
-              </div>
-            );
-          })}
-        </div>
+        <HealthBarChart districts={auditData.districts || []} />
+      </div>
+
+      {/* ── Violation Severity Donut Chart ── */}
+      <div className="bg-canvas rounded-xl border border-border p-4">
+        <h4 className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mb-3">
+          Violation Severity Ratio
+        </h4>
+        <ViolationDonutChart violations={auditData.complianceViolations || []} />
       </div>
 
       {/* ── Compliance Violations ── */}
@@ -394,6 +383,131 @@ function ViolationCard({ violation, config, Icon }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── SVG Violation Donut Chart ──────────────────────────────────────────────
+function ViolationDonutChart({ violations }) {
+  const counts = {
+    critical: violations.filter(v => v.severity?.toLowerCase() === 'critical').length,
+    high: violations.filter(v => v.severity?.toLowerCase() === 'high').length,
+    medium: violations.filter(v => v.severity?.toLowerCase() === 'medium').length,
+    low: violations.filter(v => v.severity?.toLowerCase() === 'low').length,
+  };
+
+  const total = counts.critical + counts.high + counts.medium + counts.low;
+  if (total === 0) {
+    return (
+      <div className="text-center py-4 text-zinc-500 font-mono text-xs">
+        No compliance violations detected ✓
+      </div>
+    );
+  }
+
+  const r = 24;
+  const circ = 2 * Math.PI * r;
+  
+  const segments = [
+    { name: "Critical", count: counts.critical, color: "#FF3B3B", shadow: "rgba(255, 59, 59, 0.3)" },
+    { name: "High", count: counts.high, color: "#FF8C00", shadow: "rgba(255, 140, 0, 0.3)" },
+    { name: "Medium", count: counts.medium, color: "#FBBF24", shadow: "rgba(251, 191, 36, 0.3)" },
+    { name: "Low", count: counts.low, color: "#00BFFF", shadow: "rgba(0, 191, 255, 0.3)" },
+  ].filter(s => s.count > 0);
+
+  let currentOffset = 0;
+
+  return (
+    <div className="flex items-center gap-5 p-2.5 bg-panel rounded-xl border border-border/40">
+      <div className="relative w-24 h-24 flex-shrink-0">
+        <svg viewBox="0 0 64 64" className="w-full h-full -rotate-90">
+          <circle cx="32" cy="32" r={r} fill="transparent" stroke="#141517" strokeWidth="5.5" />
+          {segments.map((seg, i) => {
+            const pct = (seg.count / total) * circ;
+            const strokeDash = `${pct} ${circ - pct}`;
+            const strokeOffset = -currentOffset;
+            currentOffset += pct;
+            return (
+              <circle
+                key={i}
+                cx="32"
+                cy="32"
+                r={r}
+                fill="transparent"
+                stroke={seg.color}
+                strokeWidth="5.5"
+                strokeDasharray={strokeDash}
+                strokeDashoffset={strokeOffset}
+                strokeLinecap="round"
+                style={{
+                  filter: `drop-shadow(0 0 4px ${seg.shadow})`
+                }}
+              />
+            );
+          })}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-base font-bold text-white leading-none">{total}</span>
+          <span className="text-[7px] font-mono text-zinc-500 tracking-wider uppercase mt-1">Alerts</span>
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-1.5 min-w-0">
+        {segments.map((seg, i) => (
+          <div key={i} className="flex items-center justify-between text-[10px] font-mono leading-none">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: seg.color }} />
+              <span className="text-zinc-400 truncate">{seg.name}</span>
+            </div>
+            <span className="text-white font-bold ml-2">{seg.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── SVG District Health Bar Chart ──────────────────────────────────────────
+function HealthBarChart({ districts }) {
+  const counts = {
+    compliant: districts.filter(d => d.status === 'COMPLIANT').length,
+    warning: districts.filter(d => d.status === 'WARNING').length,
+    critical: districts.filter(d => d.status === 'CRITICAL').length,
+  };
+  const total = districts.length;
+  if (total === 0) return null;
+
+  const maxVal = Math.max(counts.compliant, counts.warning, counts.critical, 1);
+
+  const bars = [
+    { label: "COMPLIANT", count: counts.compliant, color: "#10B981", bg: "bg-[#10B981]/15", border: "border-[#10B981]/25" },
+    { label: "WARNING", count: counts.warning, color: "#F59E0B", bg: "bg-[#F59E0B]/15", border: "border-[#F59E0B]/25" },
+    { label: "CRITICAL", count: counts.critical, color: "#EF4444", bg: "bg-[#EF4444]/15", border: "border-[#EF4444]/25" },
+  ];
+
+  return (
+    <div className="space-y-3 p-1">
+      {bars.map((bar, i) => {
+        const pct = (bar.count / maxVal) * 100;
+        return (
+          <div key={i} className="space-y-1">
+            <div className="flex items-center justify-between text-[9px] font-mono leading-none">
+              <span className="text-zinc-500 font-bold uppercase tracking-wider">{bar.label}</span>
+              <span className="text-zinc-300 font-semibold">{bar.count} module{bar.count !== 1 ? 's' : ''}</span>
+            </div>
+            <div className={`h-3 w-full bg-canvas rounded-md overflow-hidden border ${bar.border} p-[2px]`}>
+              <div
+                className="h-full rounded-sm transition-all duration-700 ease-out"
+                style={{
+                  width: `${pct}%`,
+                  backgroundColor: bar.color,
+                  boxShadow: `0 0 8px ${bar.color}40`
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

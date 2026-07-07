@@ -463,7 +463,7 @@ const FAILSAFE_MOCK = {
 
 // ─── Audit Endpoint ──────────────────────────────────────────────────────────
 app.post("/api/audit", async (req, res) => {
-  const { fileTree, projectName } = req.body;
+  const { fileTree, projectName, configContents } = req.body;
 
   if (!fileTree || typeof fileTree !== "string" || fileTree.trim().length === 0) {
     return res.status(400).json({
@@ -487,7 +487,7 @@ app.post("/api/audit", async (req, res) => {
             role: "user",
             parts: [
               {
-                text: `${SYSTEM_PROMPT}\n\n--- FILE TREE ---\n${fileTree}\n--- END FILE TREE ---\n\nAnalyze the above file tree and return your findings as structured JSON.`,
+                text: `${SYSTEM_PROMPT}\n\n--- FILE TREE ---\n${fileTree}\n--- END FILE TREE ---\n\n${configContents ? `--- DETECTED CONFIGURATION FILES CONTENT ---\n${configContents}\n--- END CONFIGURATION FILES CONTENT ---\n\n` : ""}Analyze the above file tree and the configuration file content snippets (if provided) to map the codebase into dynamic districts, detect its pattern, and identify violations. Return findings as structured JSON.`,
               },
             ],
           },
@@ -547,6 +547,7 @@ app.post("/api/audit", async (req, res) => {
 
   // Save to database
   try {
+    result.projectName = name;
     const stmt = db.prepare(
       "INSERT INTO scans (project_name, architecture_type, debt_grade, full_json) VALUES (?, ?, ?, ?)"
     );
@@ -561,7 +562,7 @@ app.post("/api/audit", async (req, res) => {
       `[SENTINEL] Analysis complete: ${result.detectedArchitecture} | Grade: ${result.technicalDebtGrade} | ${result.districts.length} districts | ${result.complianceViolations?.length || 0} violations | Saved as scan #${info.lastInsertRowid}`
     );
 
-    return res.json({ ...result, scanId: info.lastInsertRowid });
+    return res.json({ ...result, projectName: name, scanId: info.lastInsertRowid });
   } catch (dbErr) {
     console.error("[SENTINEL] Database save error:", dbErr.message);
     // Still return the result even if DB save fails
@@ -652,7 +653,7 @@ class ${activeNodeData.name.replace(/\s+/g, "")}Service {
       try {
         chatHistory = db
           .prepare(
-            "SELECT role, content FROM chat_messages WHERE scan_id = ? AND node_id = ? ORDER BY created_at DESC LIMIT 10"
+            "SELECT role, content FROM chat_messages WHERE scan_id = ? AND node_id = ? ORDER BY created_at DESC LIMIT 24"
           )
           .all(scanId, nodeId)
           .reverse();
@@ -820,7 +821,7 @@ function buildHierarchicalTree(paths, rootName) {
 }
 
 app.post("/api/github/fetch-tree", async (req, res) => {
-  const { repoUrl } = req.body;
+  const { repoUrl, deepScan } = req.body;
   
   try {
     // 1. Extract owner and repo from URL
@@ -843,9 +844,9 @@ app.post("/api/github/fetch-tree", async (req, res) => {
     const excludePatterns = [
       'node_modules', '.git', 'dist', 'build', 'out', 'coverage', 
       'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', '.DS_Store',
-      '.env', '.vscode', '.idea', '__pycache__', '.next', '.cache'
+      '.env', '.vscode', '.idea', '__pycache__', '.next', '.cache', 'vendor'
     ];
-    const excludeExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.mp4', '.pdf', '.woff', '.woff2', '.ttf', '.eot'];
+    const excludeExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.mp4', '.pdf', '.woff', '.woff2', '.ttf', '.eot', '.zip', '.tar.gz', '.exe', '.dll', '.bin'];
 
     const filteredPaths = treeData.data.tree
       .filter(item => item.type === 'blob')
@@ -864,12 +865,41 @@ app.post("/api/github/fetch-tree", async (req, res) => {
     // 5. Convert flat paths into a hierarchical tree string for AI analysis
     const fileTree = buildHierarchicalTree(filteredPaths, repo);
 
+    // 6. Deep Scan File Content Extraction (if enabled)
+    let configContents = "";
+    if (deepScan) {
+      console.log(`[SENTINEL] Deep Scan triggered for ${owner}/${repo}. Extracting architectural markers...`);
+      const targetConfigs = [
+        'package.json', 'tsconfig.json', 'next.config.js', 'next.config.mjs', 'next.config.ts',
+        'vite.config.js', 'vite.config.ts', 'go.mod', 'requirements.txt', 'cargo.toml',
+        'composer.json', 'pom.xml', 'build.gradle', 'README.md'
+      ];
+      
+      const foundConfigs = treeData.data.tree
+        .filter(item => item.type === 'blob' && targetConfigs.includes(item.path.split('/').pop()))
+        .slice(0, 3);
+
+      for (const file of foundConfigs) {
+        try {
+          console.log(`[SENTINEL] Fetching config payload: ${file.path}`);
+          const fileRes = await axios.get(`https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`, { headers });
+          if (fileRes.data && fileRes.data.content) {
+            const rawContent = Buffer.from(fileRes.data.content, 'base64').toString('utf8');
+            configContents += `\n--- FILE: ${file.path} ---\n${rawContent.slice(0, 1200)}\n----------------------\n`;
+          }
+        } catch (e) {
+          console.warn(`[SENTINEL] Failed to fetch content for ${file.path}:`, e.message);
+        }
+      }
+    }
+
     console.log(`[SENTINEL] GitHub tree built for ${owner}/${repo}: ${filteredPaths.length} files`);
 
     res.json({ 
       success: true, 
       repoName: `${owner}/${repo}`,
-      fileTree
+      fileTree,
+      configContents: configContents || null
     });
 
   } catch (error) {

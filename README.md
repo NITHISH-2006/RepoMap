@@ -1,44 +1,44 @@
-# 🛡️ RepoMap Sentinel v2.0 — Active Architecture Agent
+# 🛡️ RepoMap Sentinel v2.2 — Active Architecture Agent
 
-**Autonomous Architecture Compliance & Technical Debt Sentinel — Now with AI Agent Chat, Execution Tracing & Persistent Memory**
+**Autonomous Architecture Compliance & Technical Debt Sentinel — Now with Dynamic Themes, Trace Playback, PDF Exports, Custom SVG Dashboard Charts & GitHub Deep Scan Ingestion**
 
-An AI-powered full-stack application that analyzes repository file trees (paste or GitHub URL), detects architecture patterns, grades technical debt, visualizes module relationships as an interactive graph, and lets you chat with a context-aware AI agent about specific modules.
+An AI-powered full-stack application that analyzes repository file trees, detects architecture patterns, grades technical debt, visualizes module relationships as an interactive graph, and lets you chat with a context-aware AI agent about specific modules.
 
-![RepoMap Sentinel](https://img.shields.io/badge/RepoMap-Sentinel_v2.0-00FF00?style=for-the-badge&logo=shield&logoColor=white)
+![RepoMap Sentinel](https://img.shields.io/badge/RepoMap-Sentinel_v2.2-00FF00?style=for-the-badge&logo=shield&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-Express-339933?style=flat-square&logo=nodedotjs&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)
-![Gemini](https://img.shields.io/badge/Gemini-2.0_Flash-4285F4?style=flat-square&logo=google&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-3.5_Flash-4285F4?style=flat-square&logo=google&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-Persistent_Memory-003B57?style=flat-square&logo=sqlite&logoColor=white)
 
-## ✨ Features
+## ✨ Features (v2.2 Upgrades)
 
-### 🤖 Active Agent Capabilities
-- **Context-Aware Agent Chat (RAG)** — Click any node on the graph → chat with Gemini scoped to that module's context. Ask "How do I fix this?" and get code fixes specific to that architectural layer.
-- **Dynamic Execution Tracing** — Simulate data flows (Login Flow, DB Write, API Request) with animated path highlights across the architecture graph.
-- **Persistent Agent Memory (SQLite)** — Every scan, violation, and chat interaction is saved. Scan history persists across sessions with zero configuration.
-- **GitHub Repo Parsing** — Paste a GitHub repository URL → auto-fetch the file tree → instant architecture analysis.
+### 🎨 Visual & Layout Perfection
+- **Deterministic Repo Themes** — The system hashes the repository name to select one of 5 gorgeous themes: *Cyberpunk Neon, Emerald Matrix, Deep Space Blue, Amber Tactical, or Obsidian Gold*. The canvas background, grid dots, edge lines, and node details dynamically adjust to the theme.
+- **Trace Playback Controls** — True step-by-step playback simulation of data paths (Login Flow, DB Write, API Requests) with **Play/Pause**, **Speed Selector (0.5x, 1x, 2x)**, and a **Timeline Scrubber** slider. Highlights path nodes sequentially with glowing trails.
+- **Audience Hover Tooltips** — Hover over any district node to reveal a dynamic hover card showing descriptions tailored exactly to the globally selected audience level.
+- **Interactive SVG Dashboard Charts** — Embedded native SVG Pie/Donut Chart (Violation Severity Ratio) and capsule Bar Chart (District Health distribution) rendered at 60fps in the Audit Tab.
 
-### 📊 Architecture Analysis
-- **AI Architecture Detection** — Powered by Gemini 2.0 Flash to detect MVC, Clean Architecture, Hexagonal, and more
-- **Technical Debt Grading** — A–F scoring based on coupling, cohesion, test coverage, and naming conventions
-- **3-State Node Health** — Nodes show COMPLIANT (green), WARNING (amber pulse), or CRITICAL (red pulse) status
-- **Compliance Violation Scanner** — Identifies circular dependencies, layer violations, missing abstractions, security anti-patterns
+### 🌐 Bulletproof Ingestion & GitHub Deep Scan
+- **GitHub Ingestion** — Paste any public GitHub repo URL (`https://github.com/owner/repo`) to fetch the recursive tree with smart noise filters (excluding `node_modules`, `dist`, `.idea`, lockfiles, etc.).
+- **Deep Scan Ingestion Toggle** — When enabled, the backend extracts the actual contents of configuration and manifest files (like `package.json`, `tsconfig.json`, `go.mod`, `requirements.txt`, etc.) and feeds them to Gemini, allowing extremely accurate analysis of frameworks, tools, and code coupling.
 
-### 🎨 Interactive UI
-- **Interactive React Flow Canvas** — Visualizes architectural districts with animated dependency edges
-- **4-Way Audience Switcher** — Descriptions tailored for School Students, Junior Devs, Senior Architects, and Product Managers
-- **Onboarding Ticket Generator** — Exports audit data as GitHub-Flavored Markdown with one click
-- **3 Quick-Scan Presets** — Pre-loaded file trees for Next.js SaaS, Go Microservice, and FastAPI Backend
-- **Failsafe Mock Mode** — Works fully without an API key using rich pre-seeded data
+### 🛡️ Report Export & Memory Continuity
+- **Multi-Format Onboarding Ticket Export** — Generate beautiful reports and onboarding checklists. Export as **Markdown (.md)**, **JSON (.json)**, or download a gorgeous tactical **PDF (.pdf)** generated client-side using `jsPDF`.
+- **Conversational Memory Continuity** — The agent RAG chat now maintains context from the last 24 messages (12 complete conversation turns) stored in the WAL-enabled SQLite DB, allowing natural follow-up questions.
+- **Failsafe Mock Mode** — Fully functional without an API key, providing rich pre-seeded tactical mock metrics.
+
+---
 
 ## 🏗️ Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18, Vite, Tailwind CSS, React Flow, Lucide React |
-| Backend | Node.js, Express, @google/genai |
-| AI Model | Gemini 2.0 Flash with strict JSON schema |
-| Database | SQLite (better-sqlite3) — zero configuration |
+| Frontend | React 18, Vite, Tailwind CSS, React Flow, Lucide React, jsPDF |
+| Backend | Node.js, Express, Axios, better-sqlite3 |
+| AI Model | Gemini Flash API (with strict JSON Schema & 6-model fallback rotation chain) |
+| Database | SQLite (better-sqlite3) with WAL journal mode |
+
+---
 
 ## 🚀 Quick Start
 
@@ -46,34 +46,50 @@ An AI-powered full-stack application that analyzes repository file trees (paste 
 - Node.js 18+
 - npm 9+
 
-### Backend
-```bash
-cd backend
-cp .env.example .env    # Add your GEMINI_API_KEY (optional — mock mode works without it)
-npm install
-npm start               # Starts on http://localhost:3000
-```
+### Backend Setup
+1. Open the `backend/` folder:
+   ```bash
+   cd backend
+   ```
+2. Copy `.env.example` to `.env` and configure your API keys (you can provide multiple comma-separated keys for automatic rotation):
+   ```env
+   PORT=3000
+   GEMINI_API_KEY=AIzaSy...
+   GITHUB_TOKEN=ghp_... (Optional, for higher rate limits on public tree fetches)
+   ```
+3. Install dependencies and start:
+   ```bash
+   npm install
+   npm start
+   ```
 
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev             # Starts on http://localhost:5173
-```
+### Frontend Setup
+1. Open the `frontend/` folder:
+   ```bash
+   cd frontend
+   ```
+2. Install dependencies and start the dev server:
+   ```bash
+   npm install
+   npm run dev
+   ```
+3. Open your browser to the local URL (defaults to `http://localhost:5173`).
 
-> **Note:** The app runs fully in mock mode without a Gemini API key. Add your key to `backend/.env` to enable live AI analysis.
+---
 
 ## 📡 API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/health` | Health check with engine status |
-| `POST` | `/api/audit` | Analyze a file tree (accepts `{ fileTree, projectName }`) |
-| `POST` | `/api/agent/chat` | Context-aware chat (accepts `{ scanId, nodeId, userMessage, activeNodeData }`) |
-| `GET` | `/api/history` | List all past scans |
-| `GET` | `/api/history/:id` | Get full scan details + chat history |
-| `DELETE` | `/api/history/:id` | Delete a scan |
-| `POST` | `/api/github/fetch-tree` | Fetch a GitHub repo tree (accepts `{ repoUrl }`) |
+| `GET` | `/api/health` | Health check with database readiness and model config details |
+| `POST` | `/api/audit` | Execute AI architecture audit (accepts `{ fileTree, projectName, configContents }`) |
+| `POST` | `/api/agent/chat` | Scoped conversational agent RAG chat (accepts `{ scanId, nodeId, userMessage, activeNodeData }`) |
+| `GET` | `/api/history` | List past scan logs |
+| `GET` | `/api/history/:id` | Fetch detailed scan history + chat history database records |
+| `DELETE` | `/api/history/:id` | Purge a scan record from DB |
+| `POST` | `/api/github/fetch-tree` | Extract repo structure + configurations (accepts `{ repoUrl, deepScan }`) |
+
+---
 
 ## 📁 Project Structure
 
@@ -81,41 +97,47 @@ npm run dev             # Starts on http://localhost:5173
 repoMap/
 ├── backend/
 │   ├── server.js          # Express server + Gemini + SQLite + GitHub API
-│   ├── sentinel.db        # Auto-created SQLite database (gitignored)
+│   ├── sentinel.db        # SQLite database (auto-created)
 │   ├── package.json
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx                    # Root component + global state
+│   │   ├── App.jsx                    # Root layout + event handlers
 │   │   ├── components/
-│   │   │   ├── Header.jsx             # Logo + audience switcher + status
-│   │   │   ├── LeftPanel.jsx          # History + GitHub input + presets + terminal
-│   │   │   ├── CenterCanvas.jsx       # React Flow + execution trace toolbar
-│   │   │   ├── DistrictNode.jsx       # Custom node with 3-state status
-│   │   │   ├── RightPanel.jsx         # Inspector + Agent Chat + Audit tabs
-│   │   │   ├── AgentChat.jsx          # Context-aware AI chat interface
-│   │   │   └── TicketModal.jsx        # Markdown export modal
+│   │   │   ├── Header.jsx             # Version label + Audience Selector
+│   │   │   ├── LeftPanel.jsx          # Repos + presets + log terminal + Deep Scan toggle
+│   │   │   ├── CenterCanvas.jsx       # React Flow + Playback controls + Scrubber
+│   │   │   ├── DistrictNode.jsx       # Custom dynamic theme styles + hover tooltip
+│   │   │   ├── RightPanel.jsx         # Inspector + Agent Chat + Audit stats
+│   │   │   ├── AgentChat.jsx          # Markdown response printer
+│   │   │   └── TicketModal.jsx        # Markdown, JSON, PDF exporter
 │   │   └── data/
-│   │       ├── presets.js             # Quick-scan file trees
-│   │       └── terminalLines.js       # Loading animation messages
-│   ├── index.html
+│   │       ├── themes.js              # 5 Cyberpunk/Tactical theme definitions
+│   │       ├── presets.js             # Project presets
+│   │       └── terminalLines.js       # Log visual triggers
 │   ├── tailwind.config.js
 │   ├── vite.config.js
 │   └── package.json
-└── .gitignore
 ```
 
-<!-- ## 🎯 Demo Flow (For Presentations)
+---
 
-1. **Paste a file tree** (or GitHub URL) and hit **Execute Analysis**
-2. Watch the terminal animation and graph build itself
-3. Point to the **node status colors**: green = healthy, amber = warning, red = critical
-4. Open the **Simulate Execution Trace** dropdown → select **"User Login Flow"** → watch the graph animate
-5. **Click a red/critical node** on the graph
-6. Switch to the **Agent Chat** tab and type: *"Generate the exact code I need to fix this compliance violation"*
-7. Watch the AI generate scoped, contextual code in the chat panel
-8. Show the **Scan History** tab — past scans persist across sessions via SQLite -->
+## ⚡ Deployment Guide
+
+### Backend (Render / Railway)
+1. Deploy as a Web Service.
+2. Select Node.js environment.
+3. Configure Environment Variables (`GEMINI_API_KEY`, `PORT`, `GITHUB_TOKEN`).
+4. To persist SQLite scans across redeployments, mount a persistent volume at `/data` and update the database file path in `server.js` to `/data/sentinel.db`.
+
+### Frontend (Vercel / Netlify / GitHub Pages)
+1. Configure Vite production environment variables if needed (`VITE_API_URL` pointing to the deployed backend URL).
+2. Set build command to `npm run build` and output folder to `dist/`.
+3. Deploy as static web application.
+
+---
 
 ## 📄 License
 
 MIT
+

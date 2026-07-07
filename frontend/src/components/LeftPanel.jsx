@@ -33,6 +33,7 @@ export default function LeftPanel({
 }) {
   const [fileTree, setFileTree] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
+  const [deepScan, setDeepScan] = useState(false);
   const [terminalOutput, setTerminalOutput] = useState([]);
   const [activeSection, setActiveSection] = useState("input"); // "input" or "history"
   const terminalRef = useRef(null);
@@ -80,7 +81,7 @@ export default function LeftPanel({
 
   const handleGitHubSubmit = () => {
     if (!githubUrl.trim() || isLoading || isFetchingGithub) return;
-    onGitHubFetch(githubUrl.trim());
+    onGitHubFetch(githubUrl.trim(), deepScan);
   };
 
   const isProcessing = isLoading || isFetchingGithub;
@@ -161,6 +162,20 @@ export default function LeftPanel({
                   <ExternalLink className="w-3 h-3" />
                 )}
               </button>
+            </div>
+            {/* Deep Scan Toggle */}
+            <div className="mt-2.5 flex items-center justify-between">
+              <label className="text-[10px] font-mono text-zinc-400 cursor-pointer flex items-center gap-2 select-none">
+                <input
+                  type="checkbox"
+                  checked={deepScan}
+                  onChange={(e) => setDeepScan(e.target.checked)}
+                  disabled={isProcessing}
+                  className="rounded border-zinc-700 bg-canvas text-accent focus:ring-accent/40 h-3 w-3 accent-accent cursor-pointer"
+                  style={{ accentColor: "var(--color-accent, #00FF00)" }}
+                />
+                Deep Scan (Analyze Code Configs)
+              </label>
             </div>
           </div>
 

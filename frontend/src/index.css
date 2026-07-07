@@ -101,7 +101,7 @@
 
 /* ─── React Flow Overrides ──────────────────────────────────────── */
 .react-flow__background {
-  background-color: #0E0F11 !important;
+  background-color: transparent !important;
 }
 
 .react-flow__edge-path {
@@ -232,3 +232,64 @@
   50% { opacity: 1; transform: scale(1.2); }
   100% { opacity: 0.2; transform: scale(0.8); }
 }
+
+/* ─── Scanline Keyframes ─── */
+@keyframes scan-line {
+  0% {
+    top: 0%;
+  }
+  100% {
+    top: 100%;
+  }
+}
+
+/* ─── Status Glow & Pulse Animations ─── */
+@keyframes warning-pulse {
+  0%, 100% {
+    border-color: rgba(255, 140, 0, 0.3);
+    box-shadow: 0 0 10px rgba(255, 140, 0, 0.1), inset 0 0 5px rgba(255, 140, 0, 0.05);
+  }
+  50% {
+    border-color: rgba(255, 140, 0, 0.7);
+    box-shadow: 0 0 18px rgba(255, 140, 0, 0.3), inset 0 0 10px rgba(255, 140, 0, 0.1);
+  }
+}
+.animate-warning-pulse {
+  animation: warning-pulse 2s infinite ease-in-out;
+}
+
+@keyframes violation-pulse {
+  0%, 100% {
+    border-color: rgba(255, 59, 59, 0.3);
+    box-shadow: 0 0 10px rgba(255, 59, 59, 0.1), inset 0 0 5px rgba(255, 59, 59, 0.05);
+  }
+  50% {
+    border-color: rgba(255, 59, 59, 0.8);
+    box-shadow: 0 0 20px rgba(255, 59, 59, 0.4), inset 0 0 12px rgba(255, 59, 59, 0.15);
+  }
+}
+.animate-violation-pulse {
+  animation: violation-pulse 1.8s infinite ease-in-out;
+}
+
+@keyframes trace-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(0, 191, 255, 0.3), inset 0 0 8px rgba(0, 191, 255, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(0, 191, 255, 0.6), inset 0 0 15px rgba(0, 191, 255, 0.2);
+  }
+}
+.animate-trace-glow {
+  animation: trace-glow-pulse 1.5s infinite ease-in-out;
+}
+
+/* ─── Architectural Node Shapes ─── */
+.shape-hexagonal {
+  clip-path: polygon(12% 0%, 88% 0%, 100% 50%, 88% 100%, 12% 100%, 0% 50%);
+}
+
+.shape-octagonal {
+  clip-path: polygon(25% 0%, 75% 0%, 100% 25%, 100% 75%, 75% 100%, 25% 100%, 0% 75%, 0% 25%);
+}
+

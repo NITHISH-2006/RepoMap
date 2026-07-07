@@ -38,8 +38,8 @@ export default function App() {
     }
   };
 
-  // â”€â”€ Execute Audit â”€â”€
-  const handleExecuteAudit = useCallback(async (fileTree, projectName) => {
+  // ── Execute Audit ──
+  const handleExecuteAudit = useCallback(async (fileTree, projectName, configContents = null) => {
     setIsLoading(true);
     setError(null);
     setAuditData(null);
@@ -52,7 +52,11 @@ export default function App() {
       const response = await fetch(`${API_BASE}/api/audit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileTree, projectName: projectName || "Untitled Scan" }),
+        body: JSON.stringify({ 
+          fileTree, 
+          projectName: projectName || "Untitled Scan",
+          configContents
+        }),
       });
 
       if (!response.ok) {
@@ -78,8 +82,8 @@ export default function App() {
     }
   }, []);
 
-  // â”€â”€ Fetch GitHub Repo â”€â”€
-  const handleGitHubFetch = useCallback(async (repoUrl) => {
+  // ── Fetch GitHub Repo ──
+  const handleGitHubFetch = useCallback(async (repoUrl, deepScan = false) => {
     setIsFetchingGithub(true);
     setError(null);
 
@@ -87,7 +91,7 @@ export default function App() {
       const response = await fetch(`${API_BASE}/api/github/fetch-tree`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl }),
+        body: JSON.stringify({ repoUrl, deepScan }),
       });
 
       if (!response.ok) {
@@ -104,8 +108,8 @@ export default function App() {
       const data = await response.json();
       setIsFetchingGithub(false);
       
-      // Auto-execute audit with the fetched tree
-      await handleExecuteAudit(data.fileTree, data.repoName);
+      // Auto-execute audit with the fetched tree and config contents
+      await handleExecuteAudit(data.fileTree, data.repoName, data.configContents);
       return data;
     } catch (err) {
       console.error("GitHub fetch failed:", err);
@@ -260,6 +264,7 @@ export default function App() {
           error={error}
           activeTrace={activeTrace}
           setActiveTrace={setActiveTrace}
+          audience={audience}
         />
 
         {/* Right Panel */}

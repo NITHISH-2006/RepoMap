@@ -28,7 +28,7 @@ export default function Header({ audience, setAudience, audiences, isOnline }) {
             REPOMAP <span className="text-accent text-glow">SENTINEL</span>
           </h1>
           <span className="text-[10px] font-mono text-zinc-500 border border-zinc-700 px-1.5 py-0.5 rounded">
-            v2.0
+            v2.2
           </span>
         </div>
       </div>

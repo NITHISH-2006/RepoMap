@@ -10,18 +10,28 @@ import {
 } from "@xyflow/react";
 import dagre from "dagre";
 import "@xyflow/react/dist/style.css";
-import { Radar, Loader2, Route, ChevronDown, X } from "lucide-react";
+import { Radar, Loader2, Route, ChevronDown, X, Play, Pause, Eye, EyeOff } from "lucide-react";
 import DistrictNode from "./DistrictNode";
+import { getRepoTheme } from "../data/themes";
 
 const nodeTypes = { district: DistrictNode };
 
 // ── Layout: arrange nodes using dagre ──
-function computeLayout(districts) {
+function computeLayout(districts, architectureType, theme, audience) {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
   
-  // Set layout direction (Top to Bottom) and spacing as requested
-  dagreGraph.setGraph({ rankdir: 'TB', ranker: 'longest-path', nodesep: 100, ranksep: 200 });
+  // Dynamic layout tweaks based on node density
+  const nodeCount = districts.length;
+  const ranksep = nodeCount > 7 ? 160 : 200;
+  const nodesep = nodeCount > 7 ? 80 : 120;
+  
+  dagreGraph.setGraph({ 
+    rankdir: 'TB', 
+    ranker: 'longest-path', 
+    nodesep: nodesep, 
+    ranksep: ranksep 
+  });
 
   const nodes = [];
   const edges = [];
@@ -39,9 +49,13 @@ function computeLayout(districts) {
         connectionCount: d.connectsTo?.length || 0,
         isTraced: false,
         isTraceDimmed: false,
+        isActiveNode: false,
+        theme: theme,
+        architectureType: architectureType,
+        audience: audience,
+        descriptions: d.descriptions,
       },
     });
-    // Set node dimensions in dagre (approximate size of DistrictNode)
     dagreGraph.setNode(d.id, { width: 300, height: 150 });
   });
 
@@ -54,7 +68,17 @@ function computeLayout(districts) {
           const sourceStatus = d.status || "COMPLIANT";
           const targetDistrict = districts.find((t) => t.id === targetId);
           const targetStatus = targetDistrict?.status || "COMPLIANT";
-          const hasViolation = sourceStatus === "CRITICAL" || targetStatus === "CRITICAL";
+          
+          let edgeColor = theme.compliant;
+          if (sourceStatus === "CRITICAL" || targetStatus === "CRITICAL") {
+            edgeColor = theme.critical;
+          } else if (sourceStatus === "WARNING" || targetStatus === "WARNING") {
+            edgeColor = theme.warning;
+          }
+
+          // Thickness based on target node in-degree (connection strength)
+          const targetInDegree = districts.filter(dist => dist.connectsTo?.includes(targetId)).length;
+          const strokeWidth = targetInDegree > 2 ? 3 : targetInDegree > 1 ? 2 : 1.5;
 
           edges.push({
             id: `${d.id}-${targetId}`,
@@ -62,13 +86,13 @@ function computeLayout(districts) {
             target: targetId,
             animated: true,
             style: {
-              stroke: hasViolation ? "#FF3B3B" : "#00FF00",
-              strokeWidth: 2,
+              stroke: edgeColor,
+              strokeWidth: strokeWidth,
               opacity: 0.6,
             },
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: hasViolation ? "#FF3B3B" : "#00FF00",
+              color: edgeColor,
             },
           });
           dagreGraph.setEdge(d.id, targetId);
@@ -102,19 +126,32 @@ export default function CenterCanvas({
   error,
   activeTrace,
   setActiveTrace,
+  audience,
 }) {
   const [traceDropdownOpen, setTraceDropdownOpen] = useState(false);
+  const [showScanline, setShowScanline] = useState(true);
+
+  // Playback States
+  const [playbackIndex, setPlaybackIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1000);
+
+  // Get dynamic repo theme
+  const theme = useMemo(() => {
+    const projName = auditData?.projectName || auditData?.detectedArchitecture || "";
+    return getRepoTheme(projName);
+  }, [auditData]);
 
   const { layoutNodes, layoutEdges } = useMemo(() => {
     if (!auditData?.districts) return { layoutNodes: [], layoutEdges: [] };
-    const { nodes, edges } = computeLayout(auditData.districts);
+    const { nodes, edges } = computeLayout(auditData.districts, auditData.detectedArchitecture, theme, audience);
     return { layoutNodes: nodes, layoutEdges: edges };
-  }, [auditData]);
+  }, [auditData, theme, audience]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutEdges);
 
-  // Sync layout when auditData changes
+  // Sync layout when auditData or theme changes
   useEffect(() => {
     setNodes(layoutNodes);
     setEdges(layoutEdges);
@@ -130,63 +167,106 @@ export default function CenterCanvas({
     );
   }, [selectedDistrictId, setNodes]);
 
-  // ── Execution Trace Logic ──
+  // Reset playback index when trace changes
+  useEffect(() => {
+    setPlaybackIndex(0);
+    setIsPlaying(false);
+  }, [activeTrace]);
+
+  // Handle trace playback ticking
+  useEffect(() => {
+    if (!isPlaying || !activeTrace) return;
+    const interval = setInterval(() => {
+      setPlaybackIndex((prev) => {
+        if (prev >= activeTrace.path.length - 1) {
+          return 0; // Loop simulation
+        }
+        return prev + 1;
+      });
+    }, playbackSpeed);
+    return () => clearInterval(interval);
+  }, [isPlaying, activeTrace, playbackSpeed]);
+
+  // ── Trace Playback Highlight Logic ──
   useEffect(() => {
     if (!activeTrace) {
-      // Clear trace state
+      // Reset layout state to default
       setNodes((nds) =>
         nds.map((n) => ({
           ...n,
-          data: { ...n.data, isTraced: false, isTraceDimmed: false },
+          data: { ...n.data, isTraced: false, isTraceDimmed: false, isActiveNode: false },
         }))
       );
       setEdges((eds) =>
-        eds.map((e) => ({
-          ...e,
-          className: "",
-          style: { ...e.style, opacity: 0.6 },
-        }))
+        eds.map((e) => {
+          const sourceStatus = auditData?.districts?.find(d => d.id === e.source)?.status || "COMPLIANT";
+          const targetStatus = auditData?.districts?.find(d => d.id === e.target)?.status || "COMPLIANT";
+          
+          let edgeColor = theme.compliant;
+          if (sourceStatus === "CRITICAL" || targetStatus === "CRITICAL") {
+            edgeColor = theme.critical;
+          } else if (sourceStatus === "WARNING" || targetStatus === "WARNING") {
+            edgeColor = theme.warning;
+          }
+
+          return {
+            ...e,
+            className: "",
+            style: { ...e.style, stroke: edgeColor, strokeWidth: e.style?.strokeWidth || 2, opacity: 0.6 },
+            markerEnd: {
+              ...e.markerEnd,
+              color: edgeColor,
+            }
+          };
+        })
       );
       return;
     }
 
-    const tracePath = new Set(activeTrace.path);
+    const trailNodes = new Set(activeTrace.path.slice(0, playbackIndex + 1));
+    const activeNodeId = activeTrace.path[playbackIndex];
 
-    // Build trace edges (pairs of consecutive nodes in the path)
-    const traceEdgePairs = new Set();
-    for (let i = 0; i < activeTrace.path.length - 1; i++) {
-      traceEdgePairs.add(`${activeTrace.path[i]}-${activeTrace.path[i + 1]}`);
-      // Also check reverse since edges might go either direction
-      traceEdgePairs.add(`${activeTrace.path[i + 1]}-${activeTrace.path[i]}`);
+    // Build active edges up to the current index in the path
+    const activeTraceEdges = new Set();
+    for (let i = 0; i < playbackIndex; i++) {
+      activeTraceEdges.add(`${activeTrace.path[i]}-${activeTrace.path[i + 1]}`);
+      activeTraceEdges.add(`${activeTrace.path[i + 1]}-${activeTrace.path[i]}`);
     }
 
-    // Update nodes: traced or dimmed
+    // Update Nodes
     setNodes((nds) =>
       nds.map((n) => ({
         ...n,
         data: {
           ...n.data,
-          isTraced: tracePath.has(n.id),
-          isTraceDimmed: !tracePath.has(n.id),
+          isTraced: trailNodes.has(n.id),
+          isActiveNode: n.id === activeNodeId,
+          isTraceDimmed: !trailNodes.has(n.id),
         },
       }))
     );
 
-    // Update edges: traced or dimmed
+    // Update Edges (flowing particles and glow for active edges)
     setEdges((eds) =>
       eds.map((e) => {
-        const isTraceEdge = traceEdgePairs.has(e.id);
+        const isTraceEdge = activeTraceEdges.has(e.id);
+        const isPendingEdge = !isTraceEdge && activeTrace.path.includes(e.source) && activeTrace.path.includes(e.target);
+
         return {
           ...e,
-          className: isTraceEdge ? "trace-active" : "trace-dimmed",
+          className: isTraceEdge ? "trace-active" : isPendingEdge ? "trace-pending" : "trace-dimmed",
           animated: isTraceEdge,
           style: isTraceEdge
-            ? { stroke: "#00BFFF", strokeWidth: 3, opacity: 1 }
-            : { stroke: "#1a1a1e", strokeWidth: 1, opacity: 0.2 },
+            ? { stroke: theme.accent, strokeWidth: 3.5, opacity: 1 }
+            : { stroke: "#1c1e22", strokeWidth: 1, opacity: 0.15 },
+          markerEnd: {
+            ...e.markerEnd,
+            color: isTraceEdge ? theme.accent : "#1c1e22",
+          }
         };
       })
     );
-  }, [activeTrace, setNodes, setEdges]);
+  }, [activeTrace, playbackIndex, theme, setNodes, setEdges, auditData]);
 
   const handleNodeClick = useCallback(
     (_event, node) => {
@@ -200,7 +280,7 @@ export default function CenterCanvas({
   // ── Empty State ──
   if (!auditData && !isLoading && !error) {
     return (
-      <div className="flex-1 bg-canvas grid-bg flex items-center justify-center">
+      <div className="flex-1 bg-canvas grid-bg flex items-center justify-center" style={{ backgroundColor: theme.bg }}>
         <div className="text-center animate-fade-in">
           <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-panel border border-border flex items-center justify-center">
             <Radar className="w-10 h-10 text-zinc-600" />
@@ -220,10 +300,10 @@ export default function CenterCanvas({
   // ── Loading State ──
   if (isLoading) {
     return (
-      <div className="flex-1 bg-canvas grid-bg flex items-center justify-center scanline">
+      <div className="flex-1 bg-canvas grid-bg flex items-center justify-center scanline" style={{ backgroundColor: theme.bg }}>
         <div className="text-center animate-fade-in">
-          <Loader2 className="w-12 h-12 text-accent mx-auto mb-4 animate-spin" />
-          <p className="text-sm font-mono text-accent text-glow">
+          <Loader2 className="w-12 h-12 text-accent mx-auto mb-4 animate-spin" style={{ color: theme.accent }} />
+          <p className="text-sm font-mono text-glow" style={{ color: theme.accent, textShadow: `0 0 10px ${theme.accent}` }}>
             SCANNING ARCHITECTURE...
           </p>
         </div>
@@ -234,7 +314,7 @@ export default function CenterCanvas({
   // ── Error State ──
   if (error) {
     return (
-      <div className="flex-1 bg-canvas grid-bg flex items-center justify-center">
+      <div className="flex-1 bg-canvas grid-bg flex items-center justify-center" style={{ backgroundColor: theme.bg }}>
         <div className="text-center animate-fade-in max-w-sm">
           <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
             <span className="text-2xl">⚠️</span>
@@ -248,9 +328,8 @@ export default function CenterCanvas({
     );
   }
 
-  // ── React Flow Canvas ──
   return (
-    <div className="flex-1 bg-canvas flex flex-col relative">
+    <div className={`flex-1 bg-canvas flex flex-col relative ${showScanline ? "scanline" : ""}`} style={{ backgroundColor: theme.bg }}>
       {/* ── Mock Data Warning Banner ── */}
       {auditData?.isMock && (
         <div className="absolute top-0 left-0 right-0 bg-red-500/90 text-white text-xs font-semibold py-1.5 px-4 flex items-center justify-center gap-2 z-50">
@@ -261,15 +340,25 @@ export default function CenterCanvas({
         </div>
       )}
 
-      {/* ── Execution Trace Toolbar ── */}
+      {/* ── Dynamic Theme Brand Banner ── */}
+      {auditData && (
+        <div className="absolute bottom-4 right-4 z-40 bg-panel/75 backdrop-blur-md border border-border px-3 py-1.5 rounded-lg flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: theme.accent }} />
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+            Theme: <span className="text-white font-bold">{theme.name}</span>
+          </span>
+        </div>
+      )}
+
+      {/* ── Execution Trace Toolbar & Playback controls ── */}
       {traces.length > 0 && (
         <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-panel/80 backdrop-blur-sm z-10">
-          <Route className="w-4 h-4 text-sky-400" />
+          <Route className="w-4 h-4 text-sky-400" style={{ color: theme.accent }} />
           <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
-            Simulate Execution Trace
+            Simulate Trace
           </span>
 
-          {/* Dropdown */}
+          {/* Trace Dropdown */}
           <div className="relative">
             <button
               onClick={() => setTraceDropdownOpen(!traceDropdownOpen)}
@@ -278,6 +367,7 @@ export default function CenterCanvas({
                   ? "bg-sky-500/10 border-sky-500/40 text-sky-400"
                   : "bg-canvas border-border text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
               }`}
+              style={activeTrace ? { color: theme.accent, borderColor: `${theme.accent}40`, backgroundColor: `${theme.accent}10` } : {}}
             >
               {activeTrace ? activeTrace.name : "Select Trace"}
               <ChevronDown
@@ -302,6 +392,7 @@ export default function CenterCanvas({
                                    ? "bg-sky-500/10 text-sky-400"
                                    : "text-zinc-300 hover:bg-canvas/80 hover:text-white"
                                }`}
+                    style={activeTrace?.name === trace.name ? { backgroundColor: `${theme.accent}10`, color: theme.accent } : {}}
                   >
                     <div className="font-semibold mb-0.5">{trace.name}</div>
                     <div className="text-[10px] text-zinc-500">
@@ -315,6 +406,51 @@ export default function CenterCanvas({
               </div>
             )}
           </div>
+
+          {/* Trace Playback Controls */}
+          {activeTrace && (
+            <div className="flex items-center gap-3 border-l border-zinc-700/50 pl-3">
+              <button
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white transition-all flex items-center justify-center"
+                title={isPlaying ? "Pause Simulation" : "Play Simulation"}
+              >
+                {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              </button>
+
+              <div className="flex items-center gap-1 text-[10px] font-mono text-zinc-400">
+                <span>Speed:</span>
+                <select
+                  value={playbackSpeed}
+                  onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+                  className="bg-zinc-800 border border-zinc-700 text-zinc-300 rounded px-1 py-0.5 text-[9px] focus:outline-none"
+                >
+                  <option value={2000}>0.5x</option>
+                  <option value={1000}>1.0x</option>
+                  <option value={500}>2.0x</option>
+                </select>
+              </div>
+
+              {/* Scrubber timeline */}
+              <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
+                <input
+                  type="range"
+                  min={0}
+                  max={activeTrace.path.length - 1}
+                  value={playbackIndex}
+                  onChange={(e) => {
+                    setIsPlaying(false);
+                    setPlaybackIndex(Number(e.target.value));
+                  }}
+                  className="w-24 h-1 bg-zinc-800 rounded-lg cursor-pointer accent-accent"
+                  style={{ accentColor: theme.accent }}
+                />
+                <span className="text-[9px] text-zinc-500">
+                  {playbackIndex + 1}/{activeTrace.path.length}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Clear trace button */}
           {activeTrace && (
@@ -331,21 +467,20 @@ export default function CenterCanvas({
             </button>
           )}
 
-          {/* Trace path visualization */}
-          {activeTrace && (
-            <div className="ml-auto flex items-center gap-1 text-[10px] font-mono text-sky-400/60">
-              {activeTrace.path.map((nodeId, i) => (
-                <React.Fragment key={nodeId}>
-                  <span className="px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20">
-                    {nodeId.replace("dist-", "")}
-                  </span>
-                  {i < activeTrace.path.length - 1 && (
-                    <span className="text-sky-500">→</span>
-                  )}
-                </React.Fragment>
-              ))}
-            </div>
-          )}
+          {/* Scanline & Grid Effect Controls */}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setShowScanline(!showScanline)}
+              className={`p-1.5 rounded-lg border text-zinc-400 hover:text-zinc-200 transition-all flex items-center gap-1 ${
+                showScanline ? "bg-accent/10 border-accent/30 text-accent" : "bg-zinc-800 border-zinc-700"
+              }`}
+              style={showScanline ? { color: theme.accent, borderColor: `${theme.accent}30`, backgroundColor: `${theme.accent}10` } : {}}
+              title="Toggle Matrix Scanline Animation"
+            >
+              {showScanline ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              <span className="text-[9px] font-mono hidden md:inline">SCANLINE</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -364,21 +499,22 @@ export default function CenterCanvas({
           maxZoom={2}
           proOptions={{ hideAttribution: true }}
         >
-          <Background color="#27272A" gap={20} size={1} />
+          <Background color={theme.gridColor} gap={20} size={1} />
           <Controls
             showInteractive={false}
             position="bottom-left"
           />
           <MiniMap
             nodeColor={(n) => {
-              if (n.data?.isTraceDimmed) return "#1a1a1e";
-              if (n.data?.isTraced) return "#00BFFF";
-              if (n.selected) return "#00FF00";
-              if (n.data?.status === "CRITICAL") return "#FF3B3B";
-              if (n.data?.status === "WARNING") return "#FF8C00";
-              return "#27272A";
+              if (n.data?.isTraceDimmed) return "#131416";
+              if (n.data?.isActiveNode) return theme.accent;
+              if (n.data?.isTraced) return `${theme.accent}aa`;
+              if (n.selected) return theme.accent;
+              if (n.data?.status === "CRITICAL") return theme.critical;
+              if (n.data?.status === "WARNING") return theme.warning;
+              return theme.compliant;
             }}
-            maskColor="rgba(14, 15, 17, 0.8)"
+            maskColor="rgba(8, 9, 11, 0.85)"
             position="bottom-right"
           />
         </ReactFlow>

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { X, Copy, Check, FileText, Download } from "lucide-react";
+import { jsPDF } from "jspdf";
 
 const AUDIENCE_LABELS = {
   student: "School Student",
@@ -138,6 +139,196 @@ export default function TicketModal({
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 15;
+    const contentWidth = pageWidth - 2 * margin;
+
+    // Background color: Dark theme dashboard style (#0E0F11 -> RGB 14, 15, 17)
+    doc.setFillColor(14, 15, 17);
+    doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), "F");
+
+    let currentY = 20;
+
+    // Header border / title
+    doc.setDrawColor(39, 39, 42); // border-border (RGB 39, 39, 42)
+    doc.setLineWidth(0.5);
+    doc.line(margin, currentY, margin + contentWidth, currentY);
+    
+    currentY += 8;
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(0, 255, 0); // Neon green text-accent (RGB 0, 255, 0)
+    doc.text("REPOMAP SENTINEL — ONBOARDING TICKET", margin, currentY);
+
+    currentY += 6;
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(161, 161, 170); // text-zinc-400
+    doc.text(`Generated: ${new Date().toLocaleString()} | Target: ${AUDIENCE_LABELS[audience]}`, margin, currentY);
+
+    currentY += 6;
+    doc.line(margin, currentY, margin + contentWidth, currentY);
+    
+    // Scan Summary Cards
+    currentY += 10;
+    doc.setFillColor(20, 21, 23); // bg-panel (RGB 20, 21, 23)
+    doc.roundedRect(margin, currentY, contentWidth, 22, 2, 2, "F");
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text("ARCHITECTURE PATTERN DETECTED", margin + 5, currentY + 7);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(0, 191, 255); // text-sky-400 (RGB 0, 191, 255)
+    doc.text(auditData.detectedArchitecture || "N/A", margin + 5, currentY + 15);
+
+    // Tech Debt Grade Box
+    doc.setFillColor(39, 39, 42);
+    doc.roundedRect(margin + contentWidth - 25, currentY + 3, 20, 16, 1.5, 1.5, "F");
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(161, 161, 170);
+    doc.text("DEBT GRADE", margin + contentWidth - 23, currentY + 7);
+    doc.setFontSize(12);
+    doc.setTextColor(0, 255, 0);
+    doc.text(auditData.technicalDebtGrade || "C", margin + contentWidth - 16, currentY + 14);
+
+    currentY += 30;
+
+    // Section 1: Districts
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text("1. ARCHITECTURE DISTRICTS OVERVIEW", margin, currentY);
+    currentY += 6;
+
+    auditData.districts?.forEach((d) => {
+      if (currentY > 260) {
+        doc.addPage();
+        doc.setFillColor(14, 15, 17);
+        doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), "F");
+        currentY = 20;
+      }
+
+      // District Box
+      doc.setFillColor(20, 21, 23);
+      doc.roundedRect(margin, currentY, contentWidth, 20, 1, 1, "F");
+      
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`${d.name} (${d.layer.toUpperCase()})`, margin + 4, currentY + 6);
+      
+      const statusColor = d.status === "CRITICAL" ? [255, 59, 59] : (d.status === "WARNING" ? [255, 140, 0] : [0, 255, 0]);
+      doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
+      doc.setFontSize(8);
+      doc.text(d.status || "COMPLIANT", margin + contentWidth - 25, currentY + 6);
+
+      const desc = d.descriptions?.[audience] || "No description.";
+      doc.setFont("Helvetica", "italic");
+      doc.setFontSize(8);
+      doc.setTextColor(200, 200, 200);
+      const splitDesc = doc.splitTextToSize(desc, contentWidth - 10);
+      doc.text(splitDesc, margin + 4, currentY + 12);
+
+      currentY += Math.max(20, 12 + splitDesc.length * 4) + 4;
+    });
+
+    // Section 2: Violations
+    if (auditData.complianceViolations && auditData.complianceViolations.length > 0) {
+      if (currentY > 230) {
+        doc.addPage();
+        doc.setFillColor(14, 15, 17);
+        doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), "F");
+        currentY = 20;
+      }
+
+      currentY += 4;
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
+      doc.text("2. DETECTED COMPLIANCE VIOLATIONS", margin, currentY);
+      currentY += 6;
+
+      auditData.complianceViolations.forEach((v) => {
+        if (currentY > 260) {
+          doc.addPage();
+          doc.setFillColor(14, 15, 17);
+          doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), "F");
+          currentY = 20;
+        }
+
+        const sevColor = v.severity === "critical" ? [255, 59, 59] : (v.severity === "high" ? [255, 140, 0] : (v.severity === "medium" ? [255, 215, 0] : [0, 191, 255]));
+        doc.setFillColor(20, 21, 23);
+        doc.roundedRect(margin, currentY, contentWidth, 22, 1, 1, "F");
+
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(sevColor[0], sevColor[1], sevColor[2]);
+        doc.text(v.severity.toUpperCase(), margin + 4, currentY + 6);
+
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(255, 255, 255);
+        doc.text(`Issue: ${v.issue}`, margin + 25, currentY + 6);
+        
+        doc.setTextColor(170, 170, 170);
+        const splitRem = doc.splitTextToSize(`Fix: ${v.remediation}`, contentWidth - 30);
+        doc.text(splitRem, margin + 25, currentY + 12);
+
+        currentY += Math.max(22, 12 + splitRem.length * 4) + 4;
+      });
+    }
+
+    // Section 3: Checklist
+    if (currentY > 220) {
+      doc.addPage();
+      doc.setFillColor(14, 15, 17);
+      doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), "F");
+      currentY = 20;
+    }
+
+    currentY += 4;
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text("3. ONBOARDING CHECKLIST", margin, currentY);
+    currentY += 6;
+
+    const checklist = [
+      "Review the architecture diagram layout and node layers",
+      "Read each district description customized for your role",
+      "Understand the dependency flow between districts",
+      "Review all compliance violations and their remediations",
+      "Identify your primary working district(s)",
+      "Set up local development environment and run test suites",
+    ];
+
+    checklist.forEach((item) => {
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(220, 220, 220);
+      doc.text(`[ ]  ${item}`, margin + 4, currentY);
+      currentY += 6;
+    });
+
+    currentY += 10;
+    doc.setFont("Helvetica", "italic");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text("Generated by RepoMap Sentinel Engine v2.2", margin, currentY);
+
+    doc.save(`sentinel-onboarding-ticket-${Date.now()}.pdf`);
+  };
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in"
@@ -197,6 +388,15 @@ export default function TicketModal({
             >
               <Download className="w-3.5 h-3.5" />
               .json
+            </button>
+            <button
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+                         bg-canvas border border-border text-zinc-300
+                         hover:border-red-400/40 hover:text-red-400 transition-all duration-200"
+            >
+              <Download className="w-3.5 h-3.5" />
+              .pdf
             </button>
             <button
               onClick={onClose}
